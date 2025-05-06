@@ -2,10 +2,6 @@
 #include<stdlib.h>
 #include<stdint.h>
 #include<math.h>
-
-#define HAVE_STRUCT_TIMESPEC
-#include<pthread.h>
-
 #include"idx-file-parser.h"
 
 #define BATCH_SIZE 10
@@ -117,22 +113,6 @@ void free_activations(struct activations*a){
     free(a);
 }
 
-/// @brief Initializes the kernel with random weights.
-/// @param size total number of weights in the kernel. 
-void init_kernel(int size){
-    struct kernel*kernel = (struct kernel*)malloc(sizeof(struct kernel));
-    kernel->size = size;
-    kernel->weights = (float*)malloc(sizeof(float)*size);
-    for(int i = 0; i < size; i++){kernel->weights[i] = (float)rand()/((float)RAND_MAX) - 0.5;}
-}
-
-/// @brief Frees the kernel
-/// @param kernel 
-void free_kernel(struct kernel*kernel){
-    free(kernel->weights);
-    free(kernel);
-}
-
 /// @brief Efficient Forward prop function, Does both 
 /// @param A1 Previous activations
 /// @param L Layer with weights and biases
@@ -146,28 +126,6 @@ void forward_prop_step(struct activations*A1,struct layer*L,struct activations*A
             A2->activations[i] += L->Weights[i][j]*A1->activations[j];
         }
         A2->activations[i] += L->biases[i];
-    }
-}
-
-/// @brief MAXPOOL function for dimentionality reduction
-/// @param MaxPooledActivations The struct in which the dimention reduced image will be stored
-/// @param ConvolutedActivations The activations post Convolution. 
-void MAXPOOL(struct activations*MaxPooledActivations, struct activations*ConvolutedActivations){
-    int image_offset = sqrt(ConvolutedActivations->size);
-    int kernel = image_offset - sqrt(MaxPooledActivations->size)-1;
-    int looplen = MaxPooledActivations->size;
-    printf("%d %d %d\n",image_offset, kernel, looplen);
-    for(int i = 0; i < looplen; i++){
-        MaxPooledActivations->activations[i] = ConvolutedActivations->activations[i];
-        for (int j = 0; j < kernel; j++){
-            for (int k = 0; k < kernel; k++){
-                if(ConvolutedActivations->activations[i+j*image_offset+k]>MaxPooledActivations->activations[i]){
-                    MaxPooledActivations->activations[i] = ConvolutedActivations->activations[i+j*kernel+k];
-                }
-                printf("%d ",i+j*kernel+k);
-            }
-        }
-        printf("\n");
     }
 }
 
@@ -367,167 +325,3 @@ void print_layer(const struct layer* l) {
     printf("\n");
 }
 
-
-/// @brief Shows the image at kth index.
-/// @param pixel_data 
-/// @param k 
-void show_image(struct pixel_data*pixel_data,int k){
-    for (int i = 0; i < 784; i++){
-        if(i%28 == 0){
-            printf("\n");
-            if (pixel_data->neuron_activation[k][i] > 1) {
-                printf("# ");
-            } else {
-                printf(". ");
-            }
-        }else{
-            if (pixel_data->neuron_activation[k][i] > 1) {
-                printf("# ");
-            } else {
-                printf(". ");
-            }
-        }
-    }
-    printf("\n");
-}
-
-int main(){
-
-    // Parser Testing
-    FILE* file = fopen("data/train-labels.idx1-ubyte", "r");
-    unsigned char* label_array = get_image_labels(file);
-    printf("\n");
-    printf("%d\n",label_array[0]);
-    printf("\n");
-    float* star = one_hot_encode(label_array[0]);
-    for(int i = 0; i< 10; i++){printf("%f\n",star[i]);}
-    file = fopen("data/train-images.idx3-ubyte", "rb");
-    struct pixel_data* pixel_data = get_image_pixel_data(file);
-    printf("\n");
-
-    int LL1 = 784;
-    int LL2 = 32;
-    int LL3 = 10;
-
-    // struct layer*L1 = init_layer(LL2,LL1);
-    // struct layer*L2 = init_layer(LL3,LL2);
-
-    // struct layer*dL1 = init_layer(LL2,LL1);
-    // struct layer*dL2 = init_layer(LL3,LL2);
-
-    // struct layer*sdL1 = init_layer(LL2,LL1);
-    // struct layer*sdL2 = init_layer(LL3,LL2);
-
-    struct activations*A1 = init_activations(LL1);
-    // struct activations*A2 = init_activations(LL2);
-    // struct activations*A3 = init_activations(LL3);
-
-    // struct activations*dA_RELU = init_activations(LL2);
-    // struct activations*dZ2 = init_activations(LL2);
-    // struct activations*loss = init_activations(LL3);
-
-    struct activations*maxpool_test = init_activations(576);
-
-    input_data(pixel_data,0,A1);
-    show_image(pixel_data,0);
-    printf("maxpooling\n");
-    MAXPOOL(maxpool_test,A1);
-    for (int i = 0; i < 576; i++){
-        if(i%24 == 0){
-            printf("\n");
-            if (pixel_data->neuron_activation[0][i]*255 > 1) {
-                printf("# ");
-            } else {
-                printf(". ");
-            }
-        }else{
-            if (pixel_data->neuron_activation[0][i]*255 > 1) {
-                printf("# ");
-            } else {
-                printf(". ");
-            }
-        }
-    }
-    printf("\n");
-
-
-    // float Learning_Rate = 0.001;
-    // int epoch = 5;
-    // int size = pixel_data->size/BATCH_SIZE;
-    // while(epoch--){
-    //     for (int i = 0; i < size; i++){
-    //         float total_loss = 0.0;
-    //         for (int k = (BATCH_SIZE*i); k < (BATCH_SIZE*(i+1)); k++){
-    //             input_data(pixel_data,k,A1);
-    //             forward_prop_step(A1,L1,A2);
-    //             ReLU(A2);
-    //             forward_prop_step(A2,L2,A3);
-    //             softmax(A3);
-    //             loss_function(loss,A3,label_array[k]);
-    //             back_propogate_step(L2,dL2,loss,A2);
-    //             ReLU_derivative(A2,dA_RELU);
-    //             calc_grad_activation(dZ2,L2,loss,dA_RELU);
-    //             back_propogate_step(L1,dL1,dZ2,A1);
-    //             param_update(sdL1,dL1,1);
-    //             param_update(sdL2,dL2,1);
-    //             total_loss += compute_loss(A3,label_array[k])/BATCH_SIZE;
-    //         }
-    //         printf("\n\nBatch Loss:%f\n",total_loss);
-    //         param_update(L1,sdL1,-Learning_Rate);
-    //         param_update(L2,sdL2,-Learning_Rate);
-    //         Zero_Layer(sdL1,0);
-    //         Zero_Layer(sdL2,0);
-    //     }    
-    // }
-
-    // image_data_finalizer(pixel_data);
-    // image_label_finalizer(label_array);
-
-    // FILE* test_file = fopen("data/t10k-labels.idx1-ubyte", "r");
-    // unsigned char* test_lbl_arr = get_image_labels(test_file);
-    // test_file = fopen("data/t10k-images.idx3-ubyte", "rb");
-    // struct pixel_data* test_pix_data = get_image_pixel_data(test_file);
-
-    // printf("\n\nCalculating accuracy:-\n\n");
-    
-    // int correct_pred = 0;
-    // for (unsigned int k = 0; k < test_pix_data->size; k++){
-    //     input_data(test_pix_data,k,A1);
-    //     forward_prop_step(A1,L1,A2);
-    //     ReLU(A2);
-    //     forward_prop_step(A2,L2,A3);
-    //     softmax(A3);
-    //     if(test_lbl_arr[k] == get_pred_from_softmax(A3)){correct_pred++;}
-    //     if (k%100 == 0){printf(".");}
-    // }
-    // printf("\n\n Total Correct predictions: %d\n",correct_pred);
-    // printf("\n\n The Accuracy of the model is: %d/%d\n",correct_pred,test_pix_data->size);
-
-    // input_data(test_pix_data,10,A1);
-    // show_image(test_pix_data,10);
-    // forward_prop_step(A1,L1,A2);
-    // ReLU(A2);
-    // forward_prop_step(A2,L2,A3);
-    // softmax(A3);
-    // printf("Prediction:%d",get_pred_from_softmax(A3));
-
-    // input_data(test_pix_data,100,A1);
-    // show_image(test_pix_data,100);
-    // forward_prop_step(A1,L1,A2);
-    // ReLU(A2);
-    // forward_prop_step(A2,L2,A3);
-    // softmax(A3);
-    // printf("Prediction:%d",get_pred_from_softmax(A3));
-
-    // input_data(test_pix_data,1000,A1);
-    // show_image(test_pix_data,1000);
-    // forward_prop_step(A1,L1,A2);
-    // ReLU(A2);
-    // forward_prop_step(A2,L2,A3);
-    // softmax(A3);
-    // printf("Prediction:%d",get_pred_from_softmax(A3));
-
-    // image_data_finalizer(test_pix_data);
-    // image_label_finalizer(test_lbl_arr);
-    return 1;
-}
