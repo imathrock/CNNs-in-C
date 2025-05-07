@@ -8,9 +8,8 @@ typedef struct{
     int rows;
     int cols;
     unsigned char*Data;
-    unsigned char type;
 }Image2D;
 
 // void Convolution2D()
 
-Image2D POOL(char type, Image2D image, int ker_size);
+Image2D POOL(char type, Image2D image, int ker_size,int stride);

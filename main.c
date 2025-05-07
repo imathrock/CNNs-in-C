@@ -18,7 +18,19 @@ int main(){
     test_image.cols = pixel_data->cols;
     test_image.Data = pixel_data->neuron_activation[0];
 
-    Image2D retimg = POOL(2,test_image,1);
-
+    Image2D retimg = POOL(1,test_image,4,2);
+    for (int i = 0; i < retimg.rows; i++) {
+        for (int j = 0; j < retimg.cols; j++) {
+            int pixel = retimg.Data[i * retimg.cols + j];
+            if (pixel > 1) {
+                printf("# ");
+            } else {
+                printf(". ");
+            }
+        }
+        printf("\n");
+    }
+    
+    
     return 1;
 }
