@@ -7,8 +7,10 @@
 typedef struct{
     int rows;
     int cols;
-    uint_fast8_t*Data;
+    float*Data;
 }Image2D;
+
+void Normalize_Image(Image2D image);
 
 Image2D Conv2D(Image2D Kernel, Image2D image);
 

@@ -6,6 +6,8 @@
 #include"idx-file-parser.h"
 #include"Convolution2D.h"
 
+/// @brief Normalizes the images pixel values
+/// @param image 
 void Normalize_Image(Image2D image){
     for(int i=0; i<image.cols*image.rows;i++){image.Data[i] /= 255.0f;}
 }
@@ -18,15 +20,15 @@ Image2D Conv2D(Image2D Kernel, Image2D image){
     Image2D ret_img;
     ret_img.rows = image.rows-Kernel.rows;
     ret_img.cols = image.cols-Kernel.cols;
-    ret_img.Data = calloc(sizeof(unsigned char),ret_img.cols*ret_img.rows);
+    ret_img.Data = calloc(sizeof(float),ret_img.cols*ret_img.rows);
     for(int i = 0; i<ret_img.rows;i++){
         for (int j = 0; j < ret_img.cols; j++){
-            float dotprod = 0.0;
+            float dotprod = 0;
             for (int ki = 0; ki < Kernel.rows; ki++){
                 int ridx = ((i+ki)*image.cols);
                 for(int kj = 0; kj < Kernel.cols; kj++){
                     int cidx = (j+kj);
-                    dotprod += image.Data[ridx+cidx]*Kernel.Data[ki+kj];
+                    dotprod += image.Data[ridx+cidx]*Kernel.Data[(ki*Kernel.cols)+kj];
                 }
             }
             ret_img.Data[i*ret_img.cols+j] = dotprod;
@@ -44,16 +46,16 @@ Image2D POOL(char type, Image2D image, int ker_size, int stride){
     Image2D ret_img;
     ret_img.rows = (image.rows-ker_size)/stride+1;
     ret_img.cols = (image.cols-ker_size)/stride+1;
-    ret_img.Data = calloc(sizeof(unsigned char),ret_img.cols*ret_img.rows);
+    ret_img.Data = calloc(sizeof(float),ret_img.cols*ret_img.rows);
     if(type == 1){
         for(int i = 0; i<ret_img.rows;i++){
             for (int j = 0; j < ret_img.cols; j++){
-                int max = 0;
+                float max = 0.0f;
                 for (int ki = 0; ki < ker_size; ki++){
                     int ridx = (((i*stride)+ki)*image.cols);
                     for(int kj = 0; kj < ker_size; kj++){
                         int cidx = ((j*stride)+kj);
-                        if(ridx >= image.rows || cidx >= image.cols){continue;}
+                        if(ridx > image.rows || cidx > image.cols){}
                         if (image.Data[ridx+cidx] > max) {max = image.Data[ridx+cidx];}
                     }
                 }
@@ -63,7 +65,7 @@ Image2D POOL(char type, Image2D image, int ker_size, int stride){
     if(type == 2){
         for(int i = 0; i<ret_img.rows;i++){
             for (int j = 0; j < ret_img.cols; j++){
-                int avg = 0;
+                float avg = 0.0f;
                 for (int ki = 0; ki < ker_size; ki++){
                     int ridx = (((i*stride)+ki)*image.cols);
                     for(int kj = 0; kj < ker_size; kj++){
@@ -74,6 +76,5 @@ Image2D POOL(char type, Image2D image, int ker_size, int stride){
                 ret_img.Data[i*ret_img.cols+j] = avg;}
         }
     }
-    
     return ret_img;
 }
