@@ -4,8 +4,8 @@ CC = gcc
 CFLAGS = -I. -Wall -Wextra -g
 
 # Dependencies
-DEPS = idx-file-parser.h NeuralNetwork.h Convolution2D.h
-OBJ = idx-file-parser.o NeuralNetwork.o Convolution2D.o main.o
+DEPS = dataloaders/idx-file-parser.h NN-funcs/NeuralNetwork.h Convolution2D.h
+OBJ = dataloaders/idx-file-parser.o NN-funcs/NeuralNetwork.o Convolution2D.o main.o
 
 # Pattern rule for object files
 %.o: %.c $(DEPS)

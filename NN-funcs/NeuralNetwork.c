@@ -2,22 +2,7 @@
 #include<stdlib.h>
 #include<stdint.h>
 #include<math.h>
-
-#define BATCH_SIZE 10
-
-/// @brief Sturct containing pointers to Weights and biases of the layers.
-typedef struct layer{
-    float**Weights;
-    float*biases;
-    int rows;
-    int cols;
-}layer;
-
-/// @brief Simple float array that holds activation values of the layers. 
-typedef struct activations{
-    float*activations;
-    int size;
-}activations;
+#include"NeuralNetwork.h"
 
 /// @brief Initializes a layer struct with guards in place to prevent memory leak in case malloc fails.
 /// @param rows number of rows in both bias and weight matrix.

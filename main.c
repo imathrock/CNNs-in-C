@@ -3,7 +3,6 @@
 #include<stdint.h>
 #include<math.h>
 #include<time.h>
-#include"dataloaders/idx-file-parser.h"
 #include"Convolution2D.h"
 #include"NN-funcs/NeuralNetwork.h"
 
@@ -31,6 +30,7 @@ int main(){
     struct activations*AL3 = init_activations(oupl);// output
 
     struct activations* dZAL2 = init_activations(lay2);// hidden layer loss
+    struct activations* dZAL1 = init_activations(inpl);// input layer loss
 
     struct layer*dL1 = init_layer(lay2,inpl);
     struct layer*dL2 = init_layer(oupl,lay2);
@@ -51,8 +51,6 @@ int main(){
     for (int i = 0; i < kernel2.rows*kernel2.cols; i++){
         kernel2.Data[i] = ((float)rand()/((float)RAND_MAX) - 0.5);
     }
-
-
 
     // unpooling metadata
     int*UPMD1;
@@ -89,10 +87,13 @@ int main(){
     ReLU_derivative(AL2); // takes ReLU deriv and stored it in AL2 itself
     calc_grad_activation(dZAL2,L2,AL3,AL2);
     back_propogate_step(L1,dL1,dZAL2,AL1);
+    ReLU_derivative(AL1);
+    calc_grad_activation(dZAL1,L1,dZAL2,AL1);
     param_update(sdL1,dL1,1);
     param_update(sdL2,dL2,1);
 
     // TODO UNPOOLING IMPLEMENTATION. 
+    print_activations(dZAL1);
 
     return 1;
 }

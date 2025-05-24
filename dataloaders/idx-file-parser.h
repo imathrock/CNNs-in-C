@@ -8,6 +8,8 @@
     was given on https://yann.lecun.com/exdb/mnist/ website which was found on 
     AndrewCarterUK's github library on a similar code.
 */
+#ifndef IDX_FILE_PARSER_H
+#define IDX_FILE_PARSER_H
 
 #include<stdio.h>
 #include<stdlib.h>
@@ -32,3 +34,5 @@ struct pixel_data* get_image_pixel_data(FILE*file);
 void image_label_finalizer(unsigned char* label_array);
 
 void image_data_finalizer(struct pixel_data* data);
+
+#endif

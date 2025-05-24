@@ -5,9 +5,10 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <math.h>
+#include "dataloaders/idx-file-parser.h"
 
 // Forward declaration of the pixel_data struct (assuming it's defined in idx-file-parser.h)
-struct pixel_data;
+// struct pixel_data;
 
 // Structure containing pointers to Weights and biases of the layers.
 typedef struct layer {
