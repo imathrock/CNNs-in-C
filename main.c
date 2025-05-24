@@ -9,45 +9,57 @@
 
 #define BATCH_SIZE 10
 
+
 int main(){
     FILE* file = fopen("data/train-images.idx3-ubyte", "rb");
     struct pixel_data* pixel_data = get_image_pixel_data(file);
     printf("\n");
 
-    Image2D test_image;
-    test_image.rows = pixel_data->rows;
-    test_image.cols = pixel_data->cols;
-    test_image.Data = (float*)pixel_data->neuron_activation[0];
+    Image2D test_image = CreateImage(pixel_data->rows,pixel_data->cols,pixel_data->neuron_activation[0]);
 
-    Normalize_Image(test_image);
-
-    Image2D kernel;
-    kernel.rows = 2;
-    kernel.cols = 2;
-    kernel.Data = malloc(sizeof(float)*kernel.rows*kernel.cols);
-    for (int i = 0; i < kernel.rows*kernel.cols; i++){
-        kernel.Data[i] = 1;
+    Image2D kernel1 = CreateKernel(4,4);
+    for (int i = 0; i < kernel1.rows*kernel1.cols; i++){
+        kernel1.Data[i] = ((float)rand()/((float)RAND_MAX) - 0.5)*100;
     }
     
-
-    clock_t start = clock();
-    Image2D convimg = Conv2D(kernel,test_image);
-    Image2D retimg = POOL(1,convimg,2,2);
-    clock_t end = clock();
-    for (int i = 0; i < retimg.rows; i++) {
-        for (int j = 0; j < retimg.cols; j++) {
-            int pixel = retimg.Data[i * retimg.cols + j];
-            if (pixel > 0) {
-                printf("# ");
-            } else {
-                printf(". ");
-            }
-        }
-        printf("\n");
+    Image2D kernel2 = CreateKernel(4,4);
+    for (int i = 0; i < kernel2.rows*kernel2.cols; i++){
+        kernel2.Data[i] = ((float)rand()/((float)RAND_MAX) - 0.5)*100;
     }
-    double time_taken = (double)(end - start) / CLOCKS_PER_SEC;
-    printf("Function took %.6f seconds\n", time_taken);
+
+
+    // unpooling metadata
+    int*UPMD1;
+    int*UPMD2;
+
+    // convolution with kernel1
+    Image2D convimg1 = Conv2D(kernel1,test_image);
+    // mallocing the metadata array
+    UPMD1 = malloc(sizeof(int)*convimg1.cols*convimg1.rows);
+    // maxpooling
+    Image2D retimg1 = POOL(1,convimg1,2,2,UPMD1);
+
+    // same as above
+    Image2D convimg2 = Conv2D(kernel2,test_image);
+    UPMD2 = malloc(sizeof(int)*convimg2.cols*convimg2.rows);
+    Image2D retimg2 = POOL(1,convimg2,2,2,UPMD2);
+
+
+    // Defining 1 layer for forward prop
+    struct activations*AL1 = init_activations(retimg1.cols*retimg1.rows*2);
+    struct layer*L1 = init_layer(retimg2.rows,retimg1.cols*retimg1.rows*2);
+    struct activations*AL2 = init_activations(retimg1.rows);
     
+    // Flatten function
+    for (int i = 0; i < AL1->size/2; i++){
+        retimg1.Data[i] = AL1->activations[i];
+    }
+    for (int i = AL1->size/2; i < AL1->size; i++){
+        retimg2.Data[i] = AL1->activations[i];
+    }
+    // Forward prop test
+    forward_prop_step(AL1,L1,AL2);
+    print_activations(AL2);
     
     return 1;
 }

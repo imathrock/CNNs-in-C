@@ -41,12 +41,6 @@ struct activations* init_activations(int size);
 // Frees the activation struct.
 void free_activations(struct activations* a);
 
-// Initializes the kernel with random weights.
-void init_kernel(int size);
-
-// Frees the kernel.
-void free_kernel(struct kernel* kernel);
-
 // Efficient Forward prop function.
 void forward_prop_step(struct activations* A1, struct layer* L, struct activations* A2);
 

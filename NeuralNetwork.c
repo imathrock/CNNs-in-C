@@ -20,12 +20,6 @@ typedef struct activations{
     int size;
 }activations;
 
-/// @brief Definition of a kernel that will be slid over the entire image.
-typedef struct kernel{
-    int size;
-    float*weights;
-}kernel;
-
 /// @brief Initializes a layer struct with guards in place to prevent memory leak in case malloc fails.
 /// @param rows number of rows in both bias and weight matrix.
 /// @param cols number of columns in weight matrix.
