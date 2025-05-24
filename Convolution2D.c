@@ -2,8 +2,6 @@
 #include<stdlib.h>
 #include<stdint.h>
 #include<math.h>
-#include"NeuralNetwork.h"
-#include"idx-file-parser.h"
 #include"Convolution2D.h"
 
 Image2D CreateImage(int rows, int cols, uint8_t*Data){

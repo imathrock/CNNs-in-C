@@ -2,7 +2,7 @@
 #include<stdlib.h>
 #include<stdint.h>
 #include<math.h>
-#include"NeuralNetwork.h"
+#include"NN-funcs/NeuralNetwork.h"
 
 /// @brief Struct to contain images of any shapes and sizes.
 typedef struct{
@@ -19,6 +19,4 @@ void Normalize_Image(Image2D image);
 
 Image2D Conv2D(Image2D Kernel, Image2D image);
 
-Image2D POOL(char type, Image2D image, int ker_size,int stride);
-
-void flatten
+Image2D POOL(char type, Image2D image, int ker_size,int stride,int*UPMD);
