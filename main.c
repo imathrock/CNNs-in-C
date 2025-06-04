@@ -59,14 +59,14 @@ int main(){
     // convolution with kernel1b
     Image2D convimg1 = Conv2D(kernel1,test_image);
     // mallocing the metadata array
-    UPMD1 = malloc(sizeof(int)*convimg1.cols*convimg1.rows);
+    UPMD1 = (int*)malloc(sizeof(int)*convimg1.cols*convimg1.rows);
     // maxpooling
     Image2D retimg1 = POOL(1,convimg1,2,2,UPMD1);
 
     // same as above
     Image2D convimg2 = Conv2D(kernel2,test_image);
-    UPMD2 = malloc(sizeof(int)*convimg2.cols*convimg2.rows);
-    Image2D retimg2 = POOL(2,convimg2,2,2,UPMD2);
+    UPMD2 = (int*)malloc(sizeof(int)*convimg2.cols*convimg2.rows);
+    Image2D retimg2 = POOL(1,convimg2,2,2,UPMD2);
 
     // Flatten function
     for (int i = 0; i < AL1->size/2; i++){
@@ -89,11 +89,13 @@ int main(){
     back_propogate_step(L1,dL1,dZAL2,AL1);
     ReLU_derivative(AL1);
     calc_grad_activation(dZAL1,L1,dZAL2,AL1);
-    param_update(sdL1,dL1,1);
-    param_update(sdL2,dL2,1);
+    // param_update(sdL1,dL1,1);
+    // param_update(sdL2,dL2,1);
+    
+    UNPOOL(convimg1,retimg1,UPMD1);
+    
+    
 
-    // TODO UNPOOLING IMPLEMENTATION. 
-    print_activations(dZAL1);
 
     return 1;
 }

@@ -65,24 +65,32 @@ Image2D POOL(char type, Image2D image, int ker_size, int stride, int*UPMD){
     ret_img.rows = (image.rows-ker_size)/stride+1;
     ret_img.cols = (image.cols-ker_size)/stride+1;
     ret_img.Data = calloc(sizeof(float),ret_img.cols*ret_img.rows);
-    if(type == 1){
-        for(int i = 0; i<ret_img.rows;i++){
-            for (int j = 0; j < ret_img.cols; j++){
-                float max = 0.0f;
-                for (int ki = 0; ki < ker_size; ki++){
-                    int ridx = (((i*stride)+ki)*image.cols);
-                    for(int kj = 0; kj < ker_size; kj++){
-                        int cidx = ((j*stride)+kj);
-                        if(ridx > image.rows || cidx > image.cols){}
-                        if (image.Data[ridx+cidx] > max){
-                            max = image.Data[ridx+cidx];
-                            UPMD[i*ret_img.cols+j] = ridx+cidx;
+
+    if (type == 1) {
+        for (int i = 0; i < ret_img.rows; i++) {
+            for (int j = 0; j < ret_img.cols; j++) {
+                float max = -INFINITY;
+                int max_idx = -1;
+                for (int ki = 0; ki < ker_size; ki++) {
+                    int in_row = i * stride + ki;
+                    if (in_row >= image.rows) continue;
+                    for (int kj = 0; kj < ker_size; kj++) {
+                        int in_col = j * stride + kj;
+                        if (in_col >= image.cols) continue;
+                        int flat_idx = in_row * image.cols + in_col;
+                        float val = image.Data[flat_idx];
+                        if (val > max) {
+                            max = val;
+                            max_idx = flat_idx;
+                            UPMD[i * ret_img.cols + j] = max_idx;
                         }
                     }
                 }
-                ret_img.Data[i*ret_img.cols+j] = max;}
+                ret_img.Data[i * ret_img.cols + j] = max;
+            }
         }
     }
+
     if(type == 2){
         for(int i = 0; i<ret_img.rows;i++){
             for (int j = 0; j < ret_img.cols; j++){
@@ -97,5 +105,20 @@ Image2D POOL(char type, Image2D image, int ker_size, int stride, int*UPMD){
                 ret_img.Data[i*ret_img.cols+j] = avg;}
         }
     }
+    printf("\n\n");
     return ret_img;
+}
+
+/// @brief Unpools the image from a pooled image and with metadata
+/// @param unpooled return part
+/// @param pooled pooled image
+/// @param UPMD metadata
+void UNPOOL(Image2D unpooled,Image2D pooled, int*UPMD){
+    for(int i = 0; i < pooled.rows * pooled.cols; i++) {printf("UPMD[%d] = %d\n", i, UPMD[i]);}
+    for(int i = 0; i < unpooled.rows*unpooled.cols; i++){unpooled.Data[i] = 0.0f;}    
+    for(int i = 0; i < pooled.rows*pooled.cols; i++){unpooled.Data[UPMD[i]] = pooled.Data[i];}
+}
+
+void Kernel_Backporp(Image2D kernel){
+
 }

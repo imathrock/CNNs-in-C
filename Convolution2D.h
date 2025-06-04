@@ -20,3 +20,5 @@ void Normalize_Image(Image2D image);
 Image2D Conv2D(Image2D Kernel, Image2D image);
 
 Image2D POOL(char type, Image2D image, int ker_size,int stride,int*UPMD);
+
+void UNPOOL(Image2D unpooled,Image2D pooled, int*upmd);
