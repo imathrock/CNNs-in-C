@@ -130,8 +130,7 @@ void UNPOOL(Image2D unpooled,Image2D pooled, int*UPMD){
  * @param Image          Original input image/feature map.
  * @param learning_rate  Learning rate for update.
  */
-void backprop_kernel(Image2D Kernel, Image2D Unpooled, Image2D Image, float learning_rate){
-    Image2D delta_kernel = CreateKernel(Kernel.rows,Kernel.cols);
+void backprop_kernel(Image2D delta_kernel,Image2D Kernel, Image2D Unpooled, Image2D Image){
     for(int i = 0; i<Unpooled.rows;i++){
         for (int j = 0; j < Unpooled.cols; j++){
             int curidx = i*Unpooled.cols+j;
@@ -144,7 +143,20 @@ void backprop_kernel(Image2D Kernel, Image2D Unpooled, Image2D Image, float lear
             }
         }
     }
+}
+
+/// @brief Updates the kernel parameters using the computed gradients.
+/// @param delta_kernel Gradient of the kernel. 
+void kernel_update(Image2D delta_kernel, Image2D Kernel, float learning_rate){
     for(int i = 0; i < Kernel.cols*Kernel.rows; i++){
         Kernel.Data[i] -= learning_rate*delta_kernel.Data[i];
+    }
+}
+
+/// @brief Sets all the values in the kernel to zero
+/// @param Kernel The kernel to be zeroed out.
+void zero_kernel(Image2D Kernel){
+    for(int i = 0; i < Kernel.cols*Kernel.rows; i++){
+        Kernel.Data[i] = 0.0f;
     }
 }

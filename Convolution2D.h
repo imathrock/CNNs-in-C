@@ -23,4 +23,8 @@ Image2D POOL(char type, Image2D image, int ker_size,int stride,int*UPMD);
 
 void UNPOOL(Image2D unpooled,Image2D pooled, int*upmd);
 
-void backprop_kernel(Image2D Kernel, Image2D Unpooled, Image2D Image, float learning_rate);
+void backprop_kernel(Image2D delKernel,Image2D Kernel, Image2D Unpooled, Image2D Image);
+
+void kernel_update(Image2D delta_kernel, Image2D Kernel, float learning_rate);
+
+void zero_kernel(Image2D Kernel);
