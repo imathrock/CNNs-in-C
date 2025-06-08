@@ -105,7 +105,6 @@ Image2D POOL(char type, Image2D image, int ker_size, int stride, int*UPMD){
                 ret_img.Data[i*ret_img.cols+j] = avg;}
         }
     }
-    printf("\n\n");
     return ret_img;
 }
 
@@ -114,11 +113,36 @@ Image2D POOL(char type, Image2D image, int ker_size, int stride, int*UPMD){
 /// @param pooled pooled image
 /// @param UPMD metadata
 void UNPOOL(Image2D unpooled,Image2D pooled, int*UPMD){
-    for(int i = 0; i < pooled.rows * pooled.cols; i++) {printf("UPMD[%d] = %d\n", i, UPMD[i]);}
     for(int i = 0; i < unpooled.rows*unpooled.cols; i++){unpooled.Data[i] = 0.0f;}    
     for(int i = 0; i < pooled.rows*pooled.cols; i++){unpooled.Data[UPMD[i]] = pooled.Data[i];}
 }
 
-void Kernel_Backporp(Image2D kernel){
-
+/**
+ * @brief Updates the convolution kernel using backpropagation.
+ *
+ * Computes weight gradients from the input and upstream gradients,
+ * then updates the kernel with gradient descent.
+ *
+ * @param Kernel         Kernel to be updated (in-place).
+ * @param Unpooled       Gradient from the next layer.
+ * @param Image          Original input image/feature map.
+ * @param learning_rate  Learning rate for update.
+ */
+void backprop_kernel(Image2D Kernel, Image2D Unpooled, Image2D Image, float learning_rate){
+    Image2D delta_kernel = CreateKernel(Kernel.rows,Kernel.cols);
+    for(int i = 0; i<Unpooled.rows;i++){
+        for (int j = 0; j < Unpooled.cols; j++){
+            int curidx = i*Unpooled.cols+j;
+            for(int x = 0; x < Kernel.rows; x++){
+                int ridx = (i+x)*Image.cols;
+                for(int y = 0; y < Kernel.cols; y++){
+                    int cidx = j+y;
+                    delta_kernel.Data[x*Kernel.cols+y] += Unpooled.Data[curidx]*Image.Data[ridx+cidx];
+                }
+            }
+        }
+    }
+    for(int i = 0; i < Kernel.cols*Kernel.rows; i++){
+        Kernel.Data[i] -= learning_rate*delta_kernel.Data[i];
+    }
 }

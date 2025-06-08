@@ -42,7 +42,7 @@ int main(){
 
     Image2D test_image = CreateImage(pixel_data->rows,pixel_data->cols,pixel_data->neuron_activation[0]);
 
-    Image2D kernel1 = CreateKernel(12,12);
+    Image2D kernel1 = CreateKernel(4,4);
     for (int i = 0; i < kernel1.rows*kernel1.cols; i++){
         kernel1.Data[i] = ((float)rand()/((float)RAND_MAX) - 0.5);
     }
@@ -93,7 +93,8 @@ int main(){
     // param_update(sdL2,dL2,1);
     
     UNPOOL(convimg1,retimg1,UPMD1);
-    
+    backprop_kernel(kernel1,convimg1,test_image,0.01);
+
     
 
 
