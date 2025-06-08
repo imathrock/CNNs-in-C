@@ -26,8 +26,10 @@ Image2D CreateKernel(int rows, int cols){
 
 /// @brief Normalizes the images pixel values
 /// @param image 
-void Normalize_Image(Image2D image){
-    for(int i=0; i<image.cols*image.rows;i++){image.Data[i] /= 255.0f;}
+void ImageReLU(Image2D image){
+    for(int i=0; i<image.cols*image.rows;i++){
+        if(image.Data[i] < 0.0){image.Data[i] = 0.0;}
+    }
 }
 
 /// @brief Conducts Convolution operation with the provided kernel and returns the image

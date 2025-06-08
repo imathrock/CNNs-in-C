@@ -181,6 +181,7 @@ float compute_loss(struct activations* Fl, int k) {
         perror("Invalid label index");
         exit(1);
     }
+    
     float predicted_prob = Fl->activations[k];      
     if (predicted_prob <= 0.0f) {
         predicted_prob = 1e-15; 
