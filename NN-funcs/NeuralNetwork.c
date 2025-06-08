@@ -114,11 +114,12 @@ void ReLU(struct activations*A){
     {if(A->activations[i] < 0.0){A->activations[i] = 0.0;}}
 }
 
-/// @brief Takes Derivative of ReLU and stores it in the same struct
+/// @brief Takes Derivative of ReLU and puts it other activation struct
 /// @param A 
-void ReLU_derivative(struct activations*A){
+/// @param Z_ReLU
+void ReLU_derivative(struct activations*A,struct activations*B){
     for (int i = 0; i < A->size; i++) 
-    {A->activations[i] = (A->activations[i] <= 0.0) ? 0.0 : 1.0;}
+    {B->activations[i] = (A->activations[i] <= 0.0) ? 0.0 : 1.0;}
 }
 
 /// @brief Applies Softmax to the activation layer
@@ -160,14 +161,14 @@ float* one_hot_encode(int k){
 /// @brief Loss function that tells us the error values
 /// @param final_layer 
 /// @param k size
-void loss_function(struct activations* Fl, int k) {
+void loss_function(struct activations* dZ_loss,struct activations* Fl, int k) {
     float* j = one_hot_encode(k);
     if (j == NULL) {
         printf("Failed to allocate memory for one-hot encoding\n");
         exit(1);
     }
     for (int i = 0; i < Fl->size; i++) {
-        Fl->activations[i] -= j[i];
+        dZ_loss->activations[i] = Fl->activations[i] - j[i];
     }
     free(j);
 }

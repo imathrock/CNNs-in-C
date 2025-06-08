@@ -49,7 +49,7 @@ void forward_prop_step(struct activations* A1, struct layer* L, struct activatio
 void ReLU(struct activations* A);
 
 // Takes Derivative of ReLU and puts it in same activation struct.
-void ReLU_derivative(struct activations* A);
+void ReLU_derivative(struct activations*A,struct activations*B);
 
 // Applies Softmax to the activation layer.
 void softmax(struct activations* A);
@@ -58,7 +58,7 @@ void softmax(struct activations* A);
 float* one_hot_encode(int k);
 
 // Loss function that tells us the error values.
-void loss_function(struct activations* Fl, int k);
+void loss_function(struct activations* dZ_loss,struct activations* Fl, int k);
 
 // Computes the cross-entropy loss between predicted activations and the true label.
 float compute_loss(struct activations* Fl, int k);

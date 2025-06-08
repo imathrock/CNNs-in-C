@@ -45,6 +45,7 @@ int main(){
     struct layer*L2 = init_layer(oupl,lay2);
 
     // Loss activation buffers
+    struct activations* dZAL3 = init_activations(oupl);// output layer loss
     struct activations* dZAL2 = init_activations(lay2);// hidden layer loss
     struct activations* dZAL1 = init_activations(inpl);// input layer loss
 
@@ -63,7 +64,7 @@ int main(){
 
     Image2D kernel2 = CreateKernel(8,8);
     for (int i = 0; i < kernel2.rows*kernel2.cols; i++){
-        kernel2.Data[i] = ((float)rand()/((float)RAND_MAX) - 0.5);
+        kernel2.Data[i] = ((float)rand()/((float)RAND_MAX) - 0.5)*5;
     }
 
     // Image2D del_kernel1 = CreateKernel(8,8);
@@ -103,7 +104,7 @@ while(epoch--){
             // maxpooling
             Image2D retimg1 = POOL(1,convimg1,2,2,UPMD1);
             ImageReLU(retimg1);
-            // // print_ascii_art(retimg1);
+            // print_ascii_art(retimg1);
             // printf("Pooled Image 1\n");
             // same as above
             Image2D convimg2 = Conv2D(kernel2,image);
@@ -138,7 +139,7 @@ while(epoch--){
             // printf("Input L3\n");
             // print_activations(AL3);
             // printf("\n\n");
-            loss_function(AL3,lbl_arr[k]); // AL3 now has loss 
+            loss_function(dZAL3,AL3,lbl_arr[k]); // AL3 now has loss 
             for (int z = 0; z < AL3->size; z++) {
                 if (isnan(AL3->activations[z])) {
                     printf("NaN detected in AL3 at index %d\n", z);
@@ -149,19 +150,19 @@ while(epoch--){
             total_loss += compute_loss(AL3,lbl_arr[k])/BATCH_SIZE;
             
             back_propogate_step(L2,dL2,AL3,AL2); // (layer, deriv layer, loss, prev activations)
-            ReLU_derivative(AL2); // takes ReLU deriv and stored it in AL2 itself
-            calc_grad_activation(dZAL2,L2,AL3,AL2);
+            ReLU_derivative(AL2,dZAL2); // takes ReLU deriv and stored it in AL2 itself
+            calc_grad_activation(dZAL2,L2,AL3,dZAL2);
             back_propogate_step(L1,dL1,dZAL2,AL1);
-            ReLU_derivative(AL1);
-            calc_grad_activation(dZAL1,L1,dZAL2,AL1);
+            ReLU_derivative(AL1,dZAL1); // takes ReLU deriv and stored it in dZAL1 itself
+            calc_grad_activation(dZAL1,L1,dZAL2,dZAL1);
 
             param_update(sdL1,dL1,1);
             param_update(sdL2,dL2,1);
 
             UNPOOL(convimg1,retimg1,UPMD1);
             UNPOOL(convimg2,retimg2,UPMD2);
-            backprop_kernel(kernel1,convimg1,image,LR*0.001);
-            backprop_kernel(kernel2,convimg2,image,LR*0.01);
+            backprop_kernel(kernel1,convimg1,image,LR);
+            backprop_kernel(kernel2,convimg2,image,LR);
             free(UPMD1);
             free(UPMD2);
         }
@@ -173,8 +174,8 @@ while(epoch--){
         // for (int i = 0; i < kernel1.rows*kernel1.cols; i++){
         //     printf("%f\n",kernel2.Data[i]);
         // }
-        param_update(L1,sdL1,-LR/BATCH_SIZE);
-        param_update(L2,sdL2,-LR/BATCH_SIZE);
+        param_update(L1,sdL1,-LR);
+        param_update(L2,sdL2,-LR);
         Zero_Layer(sdL1,0);
         Zero_Layer(sdL2,0);
     }
