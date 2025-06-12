@@ -11,7 +11,7 @@ typedef struct{
     float *Data;
 }Image2D;
 
-Image2D CreateImage(int rows, int cols, uint8_t*Data);
+Image2D CreateImage(int rows, int cols);
 
 Image2D CreateKernel(int rows, int cols);
 
@@ -20,6 +20,8 @@ void ImageReLU(Image2D image);
 Image2D Conv2D(Image2D Kernel, Image2D image);
 
 Image2D POOL(char type, Image2D image, int ker_size,int stride,int*UPMD);
+
+void ImageInput(Image2D image, uint8_t*Data);
 
 void UNPOOL(Image2D unpooled,Image2D pooled, int*upmd);
 

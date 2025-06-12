@@ -48,7 +48,7 @@ void forward_prop_step(struct activations* A1, struct layer* L, struct activatio
 // Applies ReLU to the activations.
 void ReLU(struct activations* A);
 
-// Takes Derivative of ReLU and puts it in same activation struct.
+// Takes Derivative of ReLU and puts it in the other activation struct.
 void ReLU_derivative(struct activations*A,struct activations*B);
 
 // Applies Softmax to the activation layer.

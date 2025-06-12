@@ -4,15 +4,11 @@
 #include<math.h>
 #include"Convolution2D.h"
 
-Image2D CreateImage(int rows, int cols, uint8_t*Data){
+Image2D CreateImage(int rows, int cols){
     Image2D image;
     image.rows = rows;
     image.cols = cols;
     image.Data = (float*)malloc(sizeof(float)*rows*cols);
-    int k = rows*cols;
-    for (int i = 0; i < k; i++) {
-        image.Data[i] = (float)(Data[i]) / 255.0f;
-    }
     return image;
 }
 
@@ -22,6 +18,13 @@ Image2D CreateKernel(int rows, int cols){
     kernel.cols = cols;
     kernel.Data = (float*)malloc(sizeof(float)*rows*cols);
     return kernel;
+}
+
+void ImageInput(Image2D image, uint8_t*Data){
+    int k = image.rows*image.cols;
+    for (int i = 0; i < k; i++) {
+        image.Data[i] = (float)(Data[i]) / 255.0f;
+    }
 }
 
 /// @brief Normalizes the images pixel values
@@ -114,9 +117,21 @@ Image2D POOL(char type, Image2D image, int ker_size, int stride, int*UPMD){
 /// @param unpooled return part
 /// @param pooled pooled image
 /// @param UPMD metadata
-void UNPOOL(Image2D unpooled,Image2D pooled, int*UPMD){
-    for(int i = 0; i < unpooled.rows*unpooled.cols; i++){unpooled.Data[i] = 0.0f;}    
-    for(int i = 0; i < pooled.rows*pooled.cols; i++){unpooled.Data[UPMD[i]] = pooled.Data[i];}
+void UNPOOL(Image2D unpooled, Image2D pooled, int* UPMD) {
+    // Zero out the unpooled image
+    for(int i = 0; i < unpooled.rows*unpooled.cols; i++) {
+        unpooled.Data[i] = 0.0f;
+    }    
+    
+    // Unpool with bounds checking
+    for(int i = 0; i < pooled.rows*pooled.cols; i++) {
+        if(UPMD[i] >= 0 && UPMD[i] < unpooled.rows*unpooled.cols) {
+            unpooled.Data[UPMD[i]] = pooled.Data[i];
+        } else {
+            fprintf(stderr, "Invalid index in UPMD[%d] : %i\n",i, UPMD[i]);
+            // Handle error - either continue or exit
+        }
+    }
 }
 
 /**
@@ -149,7 +164,7 @@ void backprop_kernel(Image2D delta_kernel,Image2D Kernel, Image2D Unpooled, Imag
 /// @param delta_kernel Gradient of the kernel. 
 void kernel_update(Image2D delta_kernel, Image2D Kernel, float learning_rate){
     for(int i = 0; i < Kernel.cols*Kernel.rows; i++){
-        Kernel.Data[i] -= learning_rate*delta_kernel.Data[i];
+        Kernel.Data[i] += learning_rate*delta_kernel.Data[i];
     }
 }
 
