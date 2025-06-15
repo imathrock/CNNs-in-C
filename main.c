@@ -35,10 +35,10 @@ void print_pool_indices(int* UPMD, int pooled_rows, int pooled_cols, int unpoole
 
 
 int main(){
-    FILE* file = fopen("data/train-images.idx3-ubyte", "rb");
+    FILE* file = fopen("mnist/train-images.idx3-ubyte", "rb");
     struct pixel_data* pixel_data = get_image_pixel_data(file);
     fclose(file);
-    file = fopen("data/train-labels.idx1-ubyte", "rb");
+    file = fopen("mnist/train-labels.idx1-ubyte", "rb");
     unsigned char* lbl_arr = get_image_labels(file);
     fclose(file);
     
@@ -48,7 +48,7 @@ int main(){
     int size = pixel_data->size/BATCH_SIZE; 
 
     // layer sizes
-    int lay1 = 1058;
+    int lay1 = 1600;
     int lay2 = 100;
     int lay3 = 10;
     
@@ -82,16 +82,23 @@ int main(){
     Image2D image = CreateImage(pixel_data->rows, pixel_data->cols);
 
     // Create Kernels
-    Image2D kernel1 = CreateKernel(5, 5);
-    Image2D kernel2 = CreateKernel(5, 5);
+    Image2D kernel1 = CreateKernel(8, 8);
+    Image2D kernel2 = CreateKernel(8, 8);
+    Image2D kernel3 = CreateKernel(8, 8);
+    Image2D kernel4 = CreateKernel(8, 8);
 
     // Create del kernels
-    Image2D del_kernel1 = CreateKernel(5, 5);
-    Image2D del_kernel2 = CreateKernel(5, 5);
+    Image2D del_kernel1 = CreateKernel(8, 8);
+    Image2D del_kernel2 = CreateKernel(8, 8);
+    Image2D del_kernel3 = CreateKernel(8, 8);
+    Image2D del_kernel4 = CreateKernel(8, 8);
 
     // Create sum del kernels
-    Image2D sum_del_kernel1 = CreateKernel(5, 5);
-    Image2D sum_del_kernel2 = CreateKernel(5, 5);
+    Image2D sum_del_kernel1 = CreateKernel(8, 8);
+    Image2D sum_del_kernel2 = CreateKernel(8, 8);
+    Image2D sum_del_kernel3 = CreateKernel(8, 8);
+    Image2D sum_del_kernel4 = CreateKernel(8, 8);
+
 
     while(epoch--){
         for (int j = 0; j < size; j++){
@@ -101,14 +108,17 @@ int main(){
 
                 Image2D convimg1 = Conv2D(kernel1,image);
                 Image2D convimg2 = Conv2D(kernel2,image);
+                Image2D convimg3 = Conv2D(kernel3,image);
+                Image2D convimg4 = Conv2D(kernel4,image);
 
-                for(int i = 0; i < AL1->size/2  ; i++){
-                    AL1->activations[i] = convimg1.Data[i];
-                }
-                for(int i = AL1->size/2; i < AL1->size; i++){
-                    AL1->activations[i] = convimg2.Data[i - AL1->size/2];
-                }
-                
+                // Assume AL1->activations is float*, convimgX.Data is float*, all properly sized
+                int img_size = AL1->size / 4;
+
+                memcpy(AL1->activations,                    convimg1.Data, img_size * sizeof(float));
+                memcpy(AL1->activations + img_size,         convimg2.Data, img_size * sizeof(float));
+                memcpy(AL1->activations + 2 * img_size,     convimg3.Data, img_size * sizeof(float));
+                memcpy(AL1->activations + 3 * img_size,     convimg4.Data, img_size * sizeof(float));
+
                 // Forward Propagation
                 ReLU(AL1); // Relu image
                 forward_prop_step(AL1, L1, AL2); // forward prop layer 1
@@ -123,22 +133,26 @@ int main(){
                 ReLU_derivative(AL1,dZAL1_ReLU); // relu deriv
                 calc_grad_activation(dZAL1,L1,dZAL2, dZAL1_ReLU); // First layer gradient calc
                 
-                // Unflatten
-                for(int i = 0; i < dZAL1->size/2  ; i++){
-                    convimg1.Data[i] = dZAL1->activations[i];
-                }
-                for(int i = AL1->size/2; i < dZAL1->size; i++){
-                    convimg2.Data[i - dZAL1->size/2] = dZAL1->activations[i];
-                }
+                int chunk_size = dZAL1->size / 4;
+
+                memcpy(convimg1.Data, dZAL1->activations,                    chunk_size * sizeof(float));
+                memcpy(convimg2.Data, dZAL1->activations + chunk_size,       chunk_size * sizeof(float));
+                memcpy(convimg3.Data, dZAL1->activations + 2 * chunk_size,   chunk_size * sizeof(float));
+                memcpy(convimg4.Data, dZAL1->activations + 3 * chunk_size,   chunk_size * sizeof(float));
+
 
                 backprop_kernel(del_kernel1,kernel1,convimg1,image);
                 backprop_kernel(del_kernel2,kernel2,convimg2,image);
+                backprop_kernel(del_kernel3,kernel3,convimg3,image);
+                backprop_kernel(del_kernel4,kernel4,convimg4,image);
 
                 param_update(sdL1,dL1,1);
                 param_update(sdL2,dL2,1);
 
                 kernel_update(del_kernel1,sum_del_kernel1,1);
                 kernel_update(del_kernel2,sum_del_kernel2,1);
+                kernel_update(del_kernel3,sum_del_kernel3,1);
+                kernel_update(del_kernel4,sum_del_kernel4,1);
                 
                 total_loss += compute_loss(AL3,lbl_arr[k])/BATCH_SIZE;
             }
@@ -149,17 +163,21 @@ int main(){
             Zero_Layer(sdL2,0);
             kernel_update(sum_del_kernel1,kernel1,-learning_rate*0.01f);
             kernel_update(sum_del_kernel2,kernel2,-learning_rate*0.01f);
+            kernel_update(sum_del_kernel3,kernel3,-learning_rate*0.01f);
+            kernel_update(sum_del_kernel4,kernel4,-learning_rate*0.01f);
             zero_kernel(sum_del_kernel1);
             zero_kernel(sum_del_kernel2);
+            zero_kernel(sum_del_kernel3);
+            zero_kernel(sum_del_kernel4);
         }
     }
     
     image_data_finalizer(pixel_data);
     image_label_finalizer(lbl_arr);
 
-    FILE* test_file = fopen("data/t10k-labels.idx1-ubyte", "r");
+    FILE* test_file = fopen("mnist/t10k-labels.idx1-ubyte", "r");
     unsigned char* test_lbl_arr = get_image_labels(test_file);
-    test_file = fopen("data/t10k-images.idx3-ubyte", "rb");
+    test_file = fopen("mnist/t10k-images.idx3-ubyte", "rb");
     struct pixel_data* test_pix_data = get_image_pixel_data(test_file);
 
     printf("\n\nCalculating accuracy:-\n\n");
@@ -167,22 +185,25 @@ int main(){
     for (unsigned int k = 0; k < test_pix_data->size; k++){
         ImageInput(image,test_pix_data->neuron_activation[k]);
 
-        Image2D convimg1 = Conv2D(kernel1,image);
-        Image2D convimg2 = Conv2D(kernel2,image);
+                Image2D convimg1 = Conv2D(kernel1,image);
+                Image2D convimg2 = Conv2D(kernel2,image);
+                Image2D convimg3 = Conv2D(kernel3,image);
+                Image2D convimg4 = Conv2D(kernel4,image);
 
-        for(int i = 0; i < AL1->size/2  ; i++){
-            AL1->activations[i] = convimg1.Data[i];
-        }
-        for(int i = AL1->size/2; i < AL1->size; i++){
-            AL1->activations[i] = convimg2.Data[i - AL1->size/2];
-        }
-        
-        // Forward Propagation
-        ReLU(AL1); // Relu image
-        forward_prop_step(AL1, L1, AL2); // forward prop layer 1
-        ReLU(AL2); // Relu hidden 1
-        forward_prop_step(AL2, L2, AL3); // forward prop layer 2
-        softmax(AL3); // Softmax output layer
+                // Assume AL1->activations is float*, convimgX.Data is float*, all properly sized
+                int img_size = AL1->size / 4;
+
+                memcpy(AL1->activations,                    convimg1.Data, img_size * sizeof(float));
+                memcpy(AL1->activations + img_size,         convimg2.Data, img_size * sizeof(float));
+                memcpy(AL1->activations + 2 * img_size,     convimg3.Data, img_size * sizeof(float));
+                memcpy(AL1->activations + 3 * img_size,     convimg4.Data, img_size * sizeof(float));
+
+                // Forward Propagation
+                ReLU(AL1); // Relu image
+                forward_prop_step(AL1, L1, AL2); // forward prop layer 1
+                ReLU(AL2); // Relu hidden 1
+                forward_prop_step(AL2, L2, AL3); // forward prop layer 2
+                softmax(AL3); // Softmax output layer
         if(test_lbl_arr[k] == get_pred_from_softmax(AL3)){correct_pred++;}
         if (k%100 == 0){printf(".");}
     }
