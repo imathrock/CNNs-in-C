@@ -1,2 +1,10 @@
 # CNNs-in-C
-This repository will contain my implementation of CNNs derived and improved from my MNIST-from-scratch-in-C repo. There will also be multithreading in my CNN implementation.
+
+Minimal implementation of a Convolutional Neural Network in pure C—no external ML libraries.
+
+## Features
+- Convolution + pooling layers, These were implemented in this project.
+- Fully connected layers
+- ReLU and softmax activations
+- Cross-entropy loss
+- Simple SGD training loop (MNIST)
