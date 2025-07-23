@@ -4,6 +4,8 @@
 #include<math.h>
 #include"NeuralNetwork.h"
 
+#include "immintrin.h" // SIMD header
+
 /// @brief Initializes a layer struct with guards in place to prevent memory leak in case malloc fails.
 /// @param rows number of rows in both bias and weight matrix.
 /// @param cols number of columns in weight matrix.
@@ -56,7 +58,7 @@ void free_layer(struct layer*Layer){
         Layer->biases = NULL; 
     }
     if (Layer->Weights != NULL) {
-        for (unsigned int i = 0; i < sizeof(Layer->Weights)/sizeof(float*); i++) {
+        for (int i = 0; i < Layer->rows; i++) {
             if (Layer->Weights[i] != NULL) {
                 free(Layer->Weights[i]);
                 Layer->Weights[i] = NULL;
@@ -226,27 +228,52 @@ void back_propogate_step(struct layer*L,struct layer*dL,struct activations* dZ,s
     }
 }
 
+
+
 /// @brief Given original weights, biases and gradient, updates all the values accordingly
 /// @param L Layer
 /// @param dL Gradient
 void param_update(struct layer*L,struct layer*dL, float Learning_Rate){
     if(dL->rows != L->rows || dL->cols != L->cols){perror("The Gradient and Layer matrices do not match");exit(1);}
+    
     for (int i = 0; i < dL->rows; i++){
-        L->biases[i] += Learning_Rate*dL->biases[i];
+        L->biases[i] -= Learning_Rate * dL->biases[i];
         for (int j = 0; j < dL->cols; j++){
             L->Weights[i][j] += Learning_Rate*dL->Weights[i][j];}
     }
 }
 
+__attribute__((target("avx512f")))
+void param_update_avx512(struct layer* L, struct layer* dL, float Learning_Rate) {
+    if(dL->rows != L->rows || dL->cols != L->cols){perror("Gradient and Layer shape mismatch");exit(1);}
+    __m512 lr_vec = _mm512_set1_ps(Learning_Rate);
+    int simd_elem = L->rows / 16;
+
+    for(int i = 0; i < simd_elem; i++){
+        __m512 biases = _mm512_loadu_ps(&L->biases[i * 16]);
+        __m512 dbias = _mm512_loadu_ps(&dL->biases[i * 16]);
+        __m512 update = _mm512_mul_ps(lr_vec, dbias);
+        biases = _mm512_sub_ps(biases, update);
+        _mm512_storeu_ps(&L->biases[i * 16], biases);
+    }
+
+    for (int i = simd_elem * 16; i < L->rows; i++) {
+        L->biases[i] -= Learning_Rate * dL->biases[i];
+    }
+
+    for (int i = 0; i < dL->rows; i++) {
+        for (int j = 0; j < dL->cols; j++) {
+            L->Weights[i][j] += Learning_Rate * dL->Weights[i][j];
+        }
+    }
+}
+
+
 /// @brief Clears the Given layer
 /// @param L Layer
-void Zero_Layer(struct layer*L,float num){
-    if(num>1){perror("Incorrect value passed\n"); exit(1);}
-    for (int i = 0; i < L->rows; i++){
-        L->biases[i] = 0;
-        for (int j = 0; j < L->cols; j++)
-            {L->Weights[i][j] = 0;}
-    }
+void Zero_Layer(struct layer*L){
+    if(L->biases) memset(L->biases,0.0f,L->rows*sizeof(float)); //memset to 0;
+    for (int i = 0; i < L->rows; i++) memset(L->Weights[i],0.0f,L->cols*sizeof(float)); 
 }
 
 /// @brief Inputs image data into activation struct

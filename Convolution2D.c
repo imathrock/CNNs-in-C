@@ -43,7 +43,7 @@ Image2D Conv2D(Image2D Kernel, Image2D image){
     Image2D ret_img;
     ret_img.rows = image.rows-Kernel.rows;
     ret_img.cols = image.cols-Kernel.cols;
-    ret_img.Data = calloc(sizeof(float),ret_img.cols*ret_img.rows);
+    ret_img.Data = calloc(ret_img.cols*ret_img.rows,sizeof(float));
     for(int i = 0; i<ret_img.rows;i++){
         for (int j = 0; j < ret_img.cols; j++){
             float dotprod = 0;
@@ -69,7 +69,7 @@ Image2D POOL(char type, Image2D image, int ker_size, int stride, int*UPMD){
     Image2D ret_img;
     ret_img.rows = (image.rows-ker_size)/stride+1;
     ret_img.cols = (image.cols-ker_size)/stride+1;
-    ret_img.Data = calloc(sizeof(float),ret_img.cols*ret_img.rows);
+    ret_img.Data = calloc(ret_img.cols*ret_img.rows,sizeof(float));
 
     if (type == 1) {
         for (int i = 0; i < ret_img.rows; i++) {

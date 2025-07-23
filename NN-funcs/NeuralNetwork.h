@@ -24,12 +24,6 @@ typedef struct activations {
     int size;
 } activations;
 
-// Definition of a kernel that will be slid over the entire image.
-typedef struct kernel {
-    int size;
-    float* weights;
-} kernel;
-
 // Initializes a layer struct with guards in place to prevent memory leak.
 struct layer* init_layer(int rows, int cols);
 
@@ -73,7 +67,7 @@ void back_propogate_step(struct layer* L, struct layer* dL, struct activations* 
 void param_update(struct layer* L, struct layer* dL, float Learning_Rate);
 
 // Clears the Given layer.
-void Zero_Layer(struct layer* L, float num);
+void Zero_Layer(struct layer* L);
 
 // Inputs image data into activation struct.
 void input_data(struct pixel_data* pixel_data, int k, struct activations* A);

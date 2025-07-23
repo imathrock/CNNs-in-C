@@ -8,7 +8,6 @@
 
 #define BATCH_SIZE 32
 
-
 void print_ascii_art(Image2D img) {
     for (int i = 0; i < img.rows; i++) {
         for (int j = 0; j < img.cols; j++) {
@@ -35,6 +34,7 @@ void print_pool_indices(int* UPMD, int pooled_rows, int pooled_cols, int unpoole
 
 
 int main(){
+
     FILE* file = fopen("mnist/train-images.idx3-ubyte", "rb");
     struct pixel_data* pixel_data = get_image_pixel_data(file);
     fclose(file);
@@ -159,8 +159,8 @@ int main(){
             printf("\n\nBatch Loss:%f\nEpoch no:%i",total_loss,epoch);
             param_update(L1,sdL1,-learning_rate);
             param_update(L2,sdL2,-learning_rate);
-            Zero_Layer(sdL1,0);
-            Zero_Layer(sdL2,0);
+            Zero_Layer(sdL1);
+            Zero_Layer(sdL2);
             kernel_update(sum_del_kernel1,kernel1,-learning_rate*0.01f);
             kernel_update(sum_del_kernel2,kernel2,-learning_rate*0.01f);
             kernel_update(sum_del_kernel3,kernel3,-learning_rate*0.01f);
