@@ -56,70 +56,73 @@ int main(){
     struct activations* AL1 = init_activations(lay1);
     struct activations* AL2 = init_activations(lay2);
     struct activations* AL3 = init_activations(lay3);
-
+    
     // init activation error buffers
     struct activations* dZAL1 = init_activations(lay1);
     struct activations* dZAL2 = init_activations(lay2);
     struct activations* dZAL3 = init_activations(lay3);
-
+    
     // derivative buffers
     struct activations* dZAL1_ReLU = init_activations(lay1);
     struct activations* dZAL2_ReLU = init_activations(lay2);
-
+    
     // Layer init
     struct layer* L1 = init_layer(lay2,lay1);
     struct layer* L2 = init_layer(lay3,lay2);
-
+    
     // Layer error buffers
     struct layer* dL1 = init_layer(lay2,lay1);
     struct layer* dL2 = init_layer(lay3,lay2);
-
+    
     // Layer error sum buffers
     struct layer* sdL1 = init_layer(lay2,lay1);
     struct layer* sdL2 = init_layer(lay3,lay2);
-
+    
     // Create Image
     Image2D image = CreateImage(pixel_data->rows, pixel_data->cols);
-
+    
     // Create Kernels
     Image2D kernel1 = CreateKernel(8, 8);
     Image2D kernel2 = CreateKernel(8, 8);
     Image2D kernel3 = CreateKernel(8, 8);
     Image2D kernel4 = CreateKernel(8, 8);
-
+    
     // Create del kernels
     Image2D del_kernel1 = CreateKernel(8, 8);
     Image2D del_kernel2 = CreateKernel(8, 8);
     Image2D del_kernel3 = CreateKernel(8, 8);
     Image2D del_kernel4 = CreateKernel(8, 8);
-
+    
     // Create sum del kernels
     Image2D sum_del_kernel1 = CreateKernel(8, 8);
     Image2D sum_del_kernel2 = CreateKernel(8, 8);
     Image2D sum_del_kernel3 = CreateKernel(8, 8);
     Image2D sum_del_kernel4 = CreateKernel(8, 8);
-
+    
+    
+    print_ascii_art(kernel1);
+    printf("\n\n\n");
+    print_ascii_art(kernel2);
+    printf("\n\n\n");
+    
 
     while(epoch--){
         for (int j = 0; j < size; j++){
             float total_loss = 0.0f;
             for (int k = (BATCH_SIZE*j); k < (BATCH_SIZE*(j+1)); k++){
-                printf("%i\n",k);
                 ImageInput(image,pixel_data->neuron_activation[k]);
-
                 Image2D convimg1 = Conv2D(kernel1,image);
                 Image2D convimg2 = Conv2D(kernel2,image);
                 Image2D convimg3 = Conv2D(kernel3,image);
                 Image2D convimg4 = Conv2D(kernel4,image);
 
                 // Assume AL1->activations is float*, convimgX.Data is float*, all properly sized
-                int img_size = AL1->size / 4;
+                int img_size = AL1->size / 4;               
 
                 memcpy(AL1->activations,                    convimg1.Data, img_size * sizeof(float));
                 memcpy(AL1->activations + img_size,         convimg2.Data, img_size * sizeof(float));
                 memcpy(AL1->activations + 2 * img_size,     convimg3.Data, img_size * sizeof(float));
                 memcpy(AL1->activations + 3 * img_size,     convimg4.Data, img_size * sizeof(float));
-
                 // Forward Propagation
                 ReLU(AL1); // Relu image
                 forward_prop_step(AL1, L1, AL2); // forward prop layer 1

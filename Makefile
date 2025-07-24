@@ -8,7 +8,7 @@ OBJ = dataloaders/idx-file-parser.o NN-funcs/NeuralNetwork.o Convolution2D.o mai
 
 # Pattern rule for object files
 %.o: %.c $(DEPS)
-	$(CC) -c -o $@ $< $(CFLAGS) -lpthread
+	$(CC) -c -o $@ $< $(CFLAGS) -lpthread -mavx
 
 # Target for the executable
 main: $(OBJ)
