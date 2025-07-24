@@ -4,7 +4,7 @@
 #include<math.h>
 #include"NeuralNetwork.h"
 
-#include "immintrin.h" // SIMD header
+// #include "immintrin.h" // SIMD header
 
 /// @brief Initializes a layer struct with guards in place to prevent memory leak in case malloc fails.
 /// @param rows number of rows in both bias and weight matrix.
@@ -243,30 +243,30 @@ void param_update(struct layer*L,struct layer*dL, float Learning_Rate){
     }
 }
 
-__attribute__((target("avx512f")))
-void param_update_avx512(struct layer* L, struct layer* dL, float Learning_Rate) {
-    if(dL->rows != L->rows || dL->cols != L->cols){perror("Gradient and Layer shape mismatch");exit(1);}
-    __m512 lr_vec = _mm512_set1_ps(Learning_Rate);
-    int simd_elem = L->rows / 16;
+// __attribute__((target("avx512f")))
+// void param_update_avx512(struct layer* L, struct layer* dL, float Learning_Rate) {
+//     if(dL->rows != L->rows || dL->cols != L->cols){perror("Gradient and Layer shape mismatch");exit(1);}
+//     __m512 lr_vec = _mm512_set1_ps(Learning_Rate);
+//     int simd_elem = L->rows / 16;
 
-    for(int i = 0; i < simd_elem; i++){
-        __m512 biases = _mm512_loadu_ps(&L->biases[i * 16]);
-        __m512 dbias = _mm512_loadu_ps(&dL->biases[i * 16]);
-        __m512 update = _mm512_mul_ps(lr_vec, dbias);
-        biases = _mm512_sub_ps(biases, update);
-        _mm512_storeu_ps(&L->biases[i * 16], biases);
-    }
+//     for(int i = 0; i < simd_elem; i++){
+//         __m512 biases = _mm512_loadu_ps(&L->biases[i * 16]);
+//         __m512 dbias = _mm512_loadu_ps(&dL->biases[i * 16]);
+//         __m512 update = _mm512_mul_ps(lr_vec, dbias);
+//         biases = _mm512_sub_ps(biases, update);
+//         _mm512_storeu_ps(&L->biases[i * 16], biases);
+//     }
 
-    for (int i = simd_elem * 16; i < L->rows; i++) {
-        L->biases[i] -= Learning_Rate * dL->biases[i];
-    }
+//     for (int i = simd_elem * 16; i < L->rows; i++) {
+//         L->biases[i] -= Learning_Rate * dL->biases[i];
+//     }
 
-    for (int i = 0; i < dL->rows; i++) {
-        for (int j = 0; j < dL->cols; j++) {
-            L->Weights[i][j] += Learning_Rate * dL->Weights[i][j];
-        }
-    }
-}
+//     for (int i = 0; i < dL->rows; i++) {
+//         for (int j = 0; j < dL->cols; j++) {
+//             L->Weights[i][j] += Learning_Rate * dL->Weights[i][j];
+//         }
+//     }
+// }
 
 
 /// @brief Clears the Given layer

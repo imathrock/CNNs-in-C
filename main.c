@@ -104,6 +104,7 @@ int main(){
         for (int j = 0; j < size; j++){
             float total_loss = 0.0f;
             for (int k = (BATCH_SIZE*j); k < (BATCH_SIZE*(j+1)); k++){
+                printf("%i\n",k);
                 ImageInput(image,pixel_data->neuron_activation[k]);
 
                 Image2D convimg1 = Conv2D(kernel1,image);
