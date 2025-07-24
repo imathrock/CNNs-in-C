@@ -228,7 +228,18 @@ void back_propogate_step(struct layer*L,struct layer*dL,struct activations* dZ,s
     }
 }
 
+// void param_update(struct layer* L, struct layer* dL, float Learning_Rate) {
+//     static int avx512_supported = -1;
+//     if (avx512_supported == -1) {
+//         avx512_supported = __builtin_cpu_supports("avx512f");
+//     }
 
+//     if (avx512_supported) {
+//         param_update_avx512(L, dL, Learning_Rate);
+//     } else {
+//         param_update_scalar(L, dL, Learning_Rate);
+//     }
+// }
 
 /// @brief Given original weights, biases and gradient, updates all the values accordingly
 /// @param L Layer
@@ -243,30 +254,30 @@ void param_update(struct layer*L,struct layer*dL, float Learning_Rate){
     }
 }
 
-__attribute__((target("avx512f")))
-void param_update_avx512(struct layer* L, struct layer* dL, float Learning_Rate) {
-    if(dL->rows != L->rows || dL->cols != L->cols){perror("Gradient and Layer shape mismatch");exit(1);}
-    __m512 lr_vec = _mm512_set1_ps(Learning_Rate);
-    int simd_elem = L->rows / 16;
+// __attribute__((target("avx512f")))
+// void param_update_avx512(struct layer* L, struct layer* dL, float Learning_Rate) {
+//     if(dL->rows != L->rows || dL->cols != L->cols){perror("Gradient and Layer shape mismatch");exit(1);}
+//     __m512 lr_vec = _mm512_set1_ps(Learning_Rate);
+//     int simd_elem = L->rows / 16;
 
-    for(int i = 0; i < simd_elem; i++){
-        __m512 biases = _mm512_loadu_ps(&L->biases[i * 16]);
-        __m512 dbias = _mm512_loadu_ps(&dL->biases[i * 16]);
-        __m512 update = _mm512_mul_ps(lr_vec, dbias);
-        biases = _mm512_sub_ps(biases, update);
-        _mm512_storeu_ps(&L->biases[i * 16], biases);
-    }
+//     for(int i = 0; i < simd_elem; i++){
+//         __m512 biases = _mm512_loadu_ps(&L->biases[i * 16]);
+//         __m512 dbias = _mm512_loadu_ps(&dL->biases[i * 16]);
+//         __m512 update = _mm512_mul_ps(lr_vec, dbias);
+//         biases = _mm512_sub_ps(biases, update);
+//         _mm512_storeu_ps(&L->biases[i * 16], biases);
+//     }
 
-    for (int i = simd_elem * 16; i < L->rows; i++) {
-        L->biases[i] -= Learning_Rate * dL->biases[i];
-    }
+//     for (int i = simd_elem * 16; i < L->rows; i++) {
+//         L->biases[i] -= Learning_Rate * dL->biases[i];
+//     }
 
-    for (int i = 0; i < dL->rows; i++) {
-        for (int j = 0; j < dL->cols; j++) {
-            L->Weights[i][j] += Learning_Rate * dL->Weights[i][j];
-        }
-    }
-}
+//     for (int i = 0; i < dL->rows; i++) {
+//         for (int j = 0; j < dL->cols; j++) {
+//             L->Weights[i][j] += Learning_Rate * dL->Weights[i][j];
+//         }
+//     }
+// }
 
 
 /// @brief Clears the Given layer

@@ -17,6 +17,9 @@ Image2D CreateKernel(int rows, int cols){
     kernel.rows = rows;
     kernel.cols = cols;
     kernel.Data = (float*)malloc(sizeof(float)*rows*cols);
+    for(int i = 0; i < rows*cols; i++){
+        kernel.Data[i] = (float)rand()/((float)RAND_MAX) - 0.5;
+    }    
     return kernel;
 }
 

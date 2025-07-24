@@ -43,10 +43,11 @@ int main(){
     fclose(file);
     
     // Training parameters
-    int epoch = 2;
+    float batch_time = 0.0f;
+    int epoch = 1;
     float learning_rate = 0.001f;
     int size = pixel_data->size/BATCH_SIZE; 
-
+    
     // layer sizes
     int lay1 = 1600;
     int lay2 = 100;
@@ -65,7 +66,8 @@ int main(){
     // derivative buffers
     struct activations* dZAL1_ReLU = init_activations(lay1);
     struct activations* dZAL2_ReLU = init_activations(lay2);
-
+    
+    
     // Layer init
     struct layer* L1 = init_layer(lay2,lay1);
     struct layer* L2 = init_layer(lay3,lay2);
@@ -73,39 +75,39 @@ int main(){
     // Layer error buffers
     struct layer* dL1 = init_layer(lay2,lay1);
     struct layer* dL2 = init_layer(lay3,lay2);
-
+    
     // Layer error sum buffers
     struct layer* sdL1 = init_layer(lay2,lay1);
     struct layer* sdL2 = init_layer(lay3,lay2);
-
+    
     // Create Image
     Image2D image = CreateImage(pixel_data->rows, pixel_data->cols);
-
+    
     // Create Kernels
     Image2D kernel1 = CreateKernel(8, 8);
     Image2D kernel2 = CreateKernel(8, 8);
     Image2D kernel3 = CreateKernel(8, 8);
     Image2D kernel4 = CreateKernel(8, 8);
-
+    
     // Create del kernels
     Image2D del_kernel1 = CreateKernel(8, 8);
     Image2D del_kernel2 = CreateKernel(8, 8);
     Image2D del_kernel3 = CreateKernel(8, 8);
     Image2D del_kernel4 = CreateKernel(8, 8);
-
+    
     // Create sum del kernels
     Image2D sum_del_kernel1 = CreateKernel(8, 8);
     Image2D sum_del_kernel2 = CreateKernel(8, 8);
     Image2D sum_del_kernel3 = CreateKernel(8, 8);
     Image2D sum_del_kernel4 = CreateKernel(8, 8);
-
-
+    
+    
     while(epoch--){
         for (int j = 0; j < size; j++){
             float total_loss = 0.0f;
+            float start = clock();
             for (int k = (BATCH_SIZE*j); k < (BATCH_SIZE*(j+1)); k++){
                 ImageInput(image,pixel_data->neuron_activation[k]);
-
                 Image2D convimg1 = Conv2D(kernel1,image);
                 Image2D convimg2 = Conv2D(kernel2,image);
                 Image2D convimg3 = Conv2D(kernel3,image);
@@ -156,6 +158,7 @@ int main(){
                 
                 total_loss += compute_loss(AL3,lbl_arr[k])/BATCH_SIZE;
             }
+            float end = clock();
             printf("\n\nBatch Loss:%f\nEpoch no:%i",total_loss,epoch);
             param_update(L1,sdL1,-learning_rate);
             param_update(L2,sdL2,-learning_rate);
@@ -169,7 +172,12 @@ int main(){
             zero_kernel(sum_del_kernel2);
             zero_kernel(sum_del_kernel3);
             zero_kernel(sum_del_kernel4);
+            float bt = ((end-start)/CLOCKS_PER_SEC)*1000;
+            printf("\nBatch process time: %f ms\n",bt);
+            batch_time += bt;
         }
+        batch_time /= size;
+        printf("Average Batch time : %f\n Batch size 32", batch_time);
     }
     
     image_data_finalizer(pixel_data);
