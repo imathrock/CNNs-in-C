@@ -217,7 +217,7 @@ void calc_grad_activation(struct activations* dZ_curr,struct layer*L,struct acti
     for (int i = 0; i < L->cols; i++) {
         float sum = 0.0f;
         for (int j = 0; j < L->rows; j++) {
-            sum += L_WEIGHT(L, j, i) * dZ_prev->activations[j];  // Column-wise sum
+            sum += L_WEIGHT(L, j, i) * dZ_prev->activations[j]; 
         }
         dZ_curr->activations[i] = sum * A_curr->activations[i];
     }
