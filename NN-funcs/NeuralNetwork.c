@@ -105,7 +105,7 @@ void forward_prop_step(struct activations*A1,struct layer*L,struct activations*A
     //multiplication vectorization
     float buf[A2->size];
     memset(buf, 0, sizeof(buf));  // Add this line
-    float sumbuf[8];
+
     for(int i = 0; i < L->rows; i++){
         __m256 sum_vec = _mm256_setzero_ps();
         int j;
@@ -115,8 +115,12 @@ void forward_prop_step(struct activations*A1,struct layer*L,struct activations*A
             __m256 mulvec = _mm256_mul_ps(weightvec,act_vec);
             sum_vec = _mm256_add_ps(mulvec,sum_vec);
         }
-        _mm256_storeu_ps(sumbuf,sum_vec);   
-        for(int k = 0; k < 8; k++){ buf[i] += sumbuf[k]; }
+        __m128 bottom = _mm256_castps256_ps128(sum_vec);
+        __m128 top = _mm256_extractf128_ps(sum_vec,1);
+        bottom = _mm_add_ps(top,bottom);
+        bottom = _mm_hadd_ps(bottom,bottom);
+        bottom = _mm_hadd_ps(bottom,bottom);
+        buf[i] = _mm_cvtss_f32(bottom);
         for(; j < L->cols; j++){ buf[i] += L->Weights[i][j]*A1->activations[j]; }
     }
     int i = 0;
@@ -130,7 +134,6 @@ void forward_prop_step(struct activations*A1,struct layer*L,struct activations*A
         A2->activations[i] += buf[i];
     }   
 }
-
 /// @brief Applies ReLU to the activations
 /// @param A 
 void ReLU(struct activations*A){
