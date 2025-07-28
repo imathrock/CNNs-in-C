@@ -93,6 +93,7 @@ void free_activations(struct activations*a){
     free(a);
 }
 
+
 /// @brief Efficient Forward prop function, Does both 
 /// @param A1 Previous activations
 /// @param L Layer with weights and biases
@@ -104,8 +105,7 @@ void forward_prop_step(struct activations*A1,struct layer*L,struct activations*A
     // vectorize the multiplications, then vector add the summations.
     //multiplication vectorization
     float buf[A2->size];
-    memset(buf, 0, sizeof(buf));  // Add this line
-
+    memset(buf, 0, sizeof(buf));  
     for(int i = 0; i < L->rows; i++){
         __m256 sum_vec = _mm256_setzero_ps();
         int j;
@@ -134,6 +134,7 @@ void forward_prop_step(struct activations*A1,struct layer*L,struct activations*A
         A2->activations[i] += buf[i];
     }   
 }
+
 /// @brief Applies ReLU to the activations
 /// @param A 
 void ReLU(struct activations*A){
@@ -235,8 +236,24 @@ void calc_grad_activation(struct activations* dZ_curr,struct layer*L,struct acti
     }
 }
 
+// /// @brief Conducts 1 step of back propogation and also updates parameters immediately
+// /// @param L Layer's weights and biases
+// /// @param dL Gradient layer
+// /// @param dZ Loss function or activation gradient
+// /// @param A n-1th layer
+// void back_propogate_step(struct layer*L,struct layer*dL,struct activations* dZ,struct activations* A){
+//     if(dL->rows != L->rows || dL->cols != L->cols){perror("The Gradient and Layer matrices do not match");exit(1);}
+//     if(dZ->size != dL->rows){perror("Gradient activation and gradient layer matricies do not match");exit(1);}
+//     if(A->size != dL->cols){perror("activation and GradientLayer matrices do not match");exit(1);}
+//     float m = 1;
+//     for (int i = 0; i < dL->rows; i++){
+//         dL->biases[i] = dZ->activations[i] * m;
+//         for (int j = 0; j < dL->cols; j++){
+//             dL->Weights[i][j] = m*dZ->activations[i]*A->activations[j];}
+//     }
+// }
 
-/// @brief Conducts 1 step of back propogation and also updates parameters immediately
+/// @brief Conducts 1 step of back propogation
 /// @param L Layer's weights and biases
 /// @param dL Gradient layer
 /// @param dZ Loss function or activation gradient
@@ -245,33 +262,38 @@ void back_propogate_step(struct layer*L,struct layer*dL,struct activations* dZ,s
     if(dL->rows != L->rows || dL->cols != L->cols){perror("The Gradient and Layer matrices do not match");exit(1);}
     if(dZ->size != dL->rows){perror("Gradient activation and gradient layer matricies do not match");exit(1);}
     if(A->size != dL->cols){perror("activation and GradientLayer matrices do not match");exit(1);}
-    float m = 1;
+    memcpy(dL->biases,dZ->activations,sizeof(float)*dZ->size);
     for (int i = 0; i < dL->rows; i++){
-        dL->biases[i] = dZ->activations[i] * m;
-        for (int j = 0; j < dL->cols; j++){
-            dL->Weights[i][j] = m*dZ->activations[i]*A->activations[j];}
+        __m256 dZ_vec = _mm256_set1_ps(dZ->activations[i]);
+        int j;
+        for (j = 0; j+7 < dL->cols; j+=8){
+            __m256 A_vec = _mm256_loadu_ps(&A->activations[j]);
+            __m256 weight_vec = _mm256_mul_ps(dZ_vec,A_vec);
+            _mm256_storeu_ps(&dL->Weights[i][j],weight_vec);
+        }
+        for (; j<dL->cols; j++) dL->Weights[i][j] = dZ->activations[i]*A->activations[j];
     }
 }
 
-// void param_update(struct layer* L, struct layer* dL, float Learning_Rate) {
+// void param_update(struct layer* L, struct layer* dL, float LR) {
 //     static int avx512_supported = -1;
 //     if (avx512_supported == -1) {
 //         avx512_supported = __builtin_cpu_supports("avx512f");
 //     }
 
 //     if (avx512_supported) {
-//         param_update_avx512(L, dL, Learning_Rate);
+//         param_update_avx512(L, dL, LR);
 //     } else {
-//         param_update_scalar(L, dL, Learning_Rate);
+//         param_update_scalar(L, dL, LR);
 //     }
 // }
 
 /// @brief Given original weights, biases and gradient, updates all the values accordingly
 /// @param L Layer
 /// @param dL Gradient
-void param_update(struct layer*L,struct layer*dL, float Learning_Rate){
+void param_update(struct layer*L,struct layer*dL, float LR){
     if(dL->rows != L->rows || dL->cols != L->cols){perror("The Gradient and Layer matrices do not match");exit(1);}
-    __m256 LR_vec = _mm256_set1_ps(Learning_Rate);
+    __m256 LR_vec = _mm256_set1_ps(LR);
     int i = 0;
     for(; i+7 < L->rows; i+=8){
         __m256 v_bias = _mm256_loadu_ps(&L->biases[i]);
@@ -281,7 +303,7 @@ void param_update(struct layer*L,struct layer*dL, float Learning_Rate){
         _mm256_storeu_ps(&L->biases[i],v_bias);
     }
     for (; i < L->rows; i++) {
-        L->biases[i] -= Learning_Rate * dL->biases[i];
+        L->biases[i] -= LR * dL->biases[i];
     }
     for (int i = 0; i < dL->rows; i++){
         int j = 0;
@@ -293,7 +315,7 @@ void param_update(struct layer*L,struct layer*dL, float Learning_Rate){
             _mm256_storeu_ps(&L->Weights[i][j],v_w);
         }
         for (; j < L->cols; j++) {
-             L->Weights[i][j] += Learning_Rate*dL->Weights[i][j];
+             L->Weights[i][j] += LR*dL->Weights[i][j];
         }
     }
     
