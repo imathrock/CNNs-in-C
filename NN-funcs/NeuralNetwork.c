@@ -227,31 +227,16 @@ void calc_grad_activation(struct activations* dZ_curr,struct layer*L,struct acti
     if(dZ_curr->size != A_curr->size){perror("The ReLU deriv and n-1 grad activation matricies do not match");exit(1);}
     if(L->rows != dZ_prev->size){perror("The Layer matricies and gradient layer matricies do not match");exit(1);}
     if(L->cols != dZ_curr->size){perror("The Layer matricies and curr_grad layer matricies do not match");exit(1);}
+    memcpy(dZ_curr->activations,A_curr->activations,sizeof(float)*dZ_curr->size);
     for (int i = 0; i < L->cols; i++){
-        dZ_curr->activations[i] = 0.0;
+        float t = 0.0f;
         for (int j = 0; j < L->rows; j++){
-            dZ_curr->activations[i] += L->Weights[j][i]*dZ_prev->activations[j];
+            t += L->Weights[j][i]*dZ_prev->activations[j];
         }
-        dZ_curr->activations[i] *= A_curr->activations[i];
+        dZ_curr->activations[i] *= t;
     }
 }
 
-// /// @brief Conducts 1 step of back propogation and also updates parameters immediately
-// /// @param L Layer's weights and biases
-// /// @param dL Gradient layer
-// /// @param dZ Loss function or activation gradient
-// /// @param A n-1th layer
-// void back_propogate_step(struct layer*L,struct layer*dL,struct activations* dZ,struct activations* A){
-//     if(dL->rows != L->rows || dL->cols != L->cols){perror("The Gradient and Layer matrices do not match");exit(1);}
-//     if(dZ->size != dL->rows){perror("Gradient activation and gradient layer matricies do not match");exit(1);}
-//     if(A->size != dL->cols){perror("activation and GradientLayer matrices do not match");exit(1);}
-//     float m = 1;
-//     for (int i = 0; i < dL->rows; i++){
-//         dL->biases[i] = dZ->activations[i] * m;
-//         for (int j = 0; j < dL->cols; j++){
-//             dL->Weights[i][j] = m*dZ->activations[i]*A->activations[j];}
-//     }
-// }
 
 /// @brief Conducts 1 step of back propogation
 /// @param L Layer's weights and biases
