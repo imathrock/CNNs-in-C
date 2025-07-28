@@ -4,6 +4,8 @@
 #include<math.h>
 #include"Convolution2D.h"
 
+#include "immintrin.h"
+
 Image2D CreateImage(int rows, int cols){
     Image2D image;
     image.rows = rows;
@@ -17,15 +19,15 @@ Image2D CreateKernel(int rows, int cols){
     kernel.rows = rows;
     kernel.cols = cols;
     kernel.Data = (float*)malloc(sizeof(float)*rows*cols);
-    for(int i = 0; i < rows*cols; i++){
+    for(int i = 0; i<rows*cols; i++){
         kernel.Data[i] = (float)rand()/((float)RAND_MAX) - 0.5;
-    }    
+    }
     return kernel;
 }
 
 void ImageInput(Image2D image, uint8_t*Data){
     int k = image.rows*image.cols;
-    for (int i = 0; i < k; i++) {
+    for (int i = 0; i< k; i++) {
         image.Data[i] = (float)(Data[i]) / 255.0f;
     }
 }
@@ -116,26 +118,23 @@ Image2D POOL(char type, Image2D image, int ker_size, int stride, int*UPMD){
     return ret_img;
 }
 
-/// @brief Unpools the image from a pooled image and with metadata
-/// @param unpooled return part
-/// @param pooled pooled image
-/// @param UPMD metadata
-void UNPOOL(Image2D unpooled, Image2D pooled, int* UPMD) {
-    // Zero out the unpooled image
-    for(int i = 0; i < unpooled.rows*unpooled.cols; i++) {
-        unpooled.Data[i] = 0.0f;
-    }    
-    
-    // Unpool with bounds checking
-    for(int i = 0; i < pooled.rows*pooled.cols; i++) {
-        if(UPMD[i] >= 0 && UPMD[i] < unpooled.rows*unpooled.cols) {
-            unpooled.Data[UPMD[i]] = pooled.Data[i];
-        } else {
-            fprintf(stderr, "Invalid index in UPMD[%d] : %i\n",i, UPMD[i]);
-            // Handle error - either continue or exit
-        }
-    }
-}
+// /// @brief Unpools the image from a pooled image and with metadata
+// /// @param unpooled return part
+// /// @param pooled pooled image
+// /// @param UPMD metadata
+// void UNPOOL(Image2D unpooled, Image2D pooled, int* UPMD) {
+//     // Zero out the unpooled image
+//     memset(&unpooled->Data,0.0f,unpooled->rows*unpooled->cols);
+//     // Unpool with bounds checking
+//     for(int i = 0; i < pooled.rows*pooled.cols; i++) {
+//         if(UPMD[i] >= 0 && UPMD[i] < unpooled.rows*unpooled.cols) {
+//             unpooled.Data[UPMD[i]] = pooled.Data[i];
+//         } else {
+//             fprintf(stderr, "Invalid index in UPMD[%d] : %i\n",i, UPMD[i]);
+//             // Handle error - either continue or exit
+//         }
+//     }
+// }
 
 /**
  * @brief Updates the convolution kernel using backpropagation.
@@ -166,15 +165,23 @@ void backprop_kernel(Image2D delta_kernel,Image2D Kernel, Image2D Unpooled, Imag
 /// @brief Updates the kernel parameters using the computed gradients.
 /// @param delta_kernel Gradient of the kernel. 
 void kernel_update(Image2D delta_kernel, Image2D Kernel, float learning_rate){
-    for(int i = 0; i < Kernel.cols*Kernel.rows; i++){
-        Kernel.Data[i] += learning_rate*delta_kernel.Data[i];
+    __m256 lr_vec = _mm256_set1_ps(learning_rate);
+    int i = 0;
+    for(; i+7 < Kernel.cols*Kernel.rows; i+=8){
+        __m256 v_ker = _mm256_loadu_ps(&Kernel.Data[i]);
+        __m256 v_dker = _mm256_loadu_ps(&delta_kernel.Data[i]);
+        __m256 mulvec = _mm256_mul_ps(lr_vec,v_dker);
+        v_ker = _mm256_sub_ps(mulvec,v_ker);
+        _mm256_storeu_ps(&Kernel.Data[i],v_ker);
     }
+    for (; i < Kernel.cols*Kernel.rows; i++){
+        Kernel.Data[i] -= learning_rate*delta_kernel.Data[i];
+    }
+    
 }
 
 /// @brief Sets all the values in the kernel to zero
 /// @param Kernel The kernel to be zeroed out.
 void zero_kernel(Image2D Kernel){
-    for(int i = 0; i < Kernel.cols*Kernel.rows; i++){
-        Kernel.Data[i] = 0.0f;
-    }
+    memset(Kernel.Data,0.0f,Kernel.cols*Kernel.rows);
 }

@@ -4,7 +4,7 @@
 #include<math.h>
 #include"NeuralNetwork.h"
 
-#include "immintrin.h" // SIMD header
+#include <immintrin.h> // Header for AVX intrinsics
 
 /// @brief Initializes a layer struct with guards in place to prevent memory leak in case malloc fails.
 /// @param rows number of rows in both bias and weight matrix.
@@ -100,13 +100,35 @@ void free_activations(struct activations*a){
 void forward_prop_step(struct activations*A1,struct layer*L,struct activations*A2){
     if(A1->size != L->cols){perror("A1's size and L's weight's cols do not match"); exit(1);}
     if(A2->size != L->rows){perror("A2's size and L's weight's rows do not match"); exit(1);}
+    memcpy(A2->activations,L->biases,sizeof(float)*A2->size);
+    // vectorize the multiplications, then vector add the summations.
+    //multiplication vectorization
+    float buf[A2->size];
+    memset(buf, 0, sizeof(buf));  // Add this line
+    float sumbuf[8];
     for(int i = 0; i < L->rows; i++){
-        A2->activations[i] = 0.0;
-        for(int j = 0; j < L->cols; j++){
-            A2->activations[i] += L->Weights[i][j]*A1->activations[j];
+        __m256 sum_vec = _mm256_setzero_ps();
+        int j;
+        for(j = 0; j+7<L->cols; j+=8){
+            __m256 weightvec = _mm256_loadu_ps(&L->Weights[i][j]);
+            __m256 act_vec = _mm256_loadu_ps(&A1->activations[j]);
+            __m256 mulvec = _mm256_mul_ps(weightvec,act_vec);
+            sum_vec = _mm256_add_ps(mulvec,sum_vec);
         }
-        A2->activations[i] += L->biases[i];
+        _mm256_storeu_ps(sumbuf,sum_vec);   
+        for(int k = 0; k < 8; k++){ buf[i] += sumbuf[k]; }
+        for(; j < L->cols; j++){ buf[i] += L->Weights[i][j]*A1->activations[j]; }
     }
+    int i = 0;
+    for(; i+7 < L->rows; i+=8){
+        __m256 buf_vec = _mm256_loadu_ps(&buf[i]);
+        __m256 act_vec = _mm256_loadu_ps(&A2->activations[i]);
+        act_vec = _mm256_add_ps(buf_vec,act_vec);
+        _mm256_storeu_ps(&A2->activations[i],act_vec);
+    }
+    for (; i < L->rows; i++){
+        A2->activations[i] += buf[i];
+    }   
 }
 
 /// @brief Applies ReLU to the activations
@@ -246,39 +268,33 @@ void back_propogate_step(struct layer*L,struct layer*dL,struct activations* dZ,s
 /// @param dL Gradient
 void param_update(struct layer*L,struct layer*dL, float Learning_Rate){
     if(dL->rows != L->rows || dL->cols != L->cols){perror("The Gradient and Layer matrices do not match");exit(1);}
-    
-    for (int i = 0; i < dL->rows; i++){
-        L->biases[i] -= Learning_Rate * dL->biases[i];
-        for (int j = 0; j < dL->cols; j++){
-            L->Weights[i][j] += Learning_Rate*dL->Weights[i][j];}
+    __m256 LR_vec = _mm256_set1_ps(Learning_Rate);
+    int i = 0;
+    for(; i+7 < L->rows; i+=8){
+        __m256 v_bias = _mm256_loadu_ps(&L->biases[i]);
+        __m256 v_dbias = _mm256_loadu_ps(&dL->biases[i]);
+        __m256 mulvec = _mm256_mul_ps(LR_vec,v_dbias);
+        v_bias = _mm256_sub_ps(v_bias,mulvec);
+        _mm256_storeu_ps(&L->biases[i],v_bias);
     }
+    for (; i < L->rows; i++) {
+        L->biases[i] -= Learning_Rate * dL->biases[i];
+    }
+    for (int i = 0; i < dL->rows; i++){
+        int j = 0;
+        for (; j+7 < dL->cols; j+=8){
+            __m256 v_w = _mm256_loadu_ps(&L->Weights[i][j]);
+            __m256 vdW = _mm256_loadu_ps(&dL->Weights[i][j]);
+            __m256 mulvec = _mm256_mul_ps(LR_vec,vdW);
+            v_w = _mm256_sub_ps(v_w,mulvec);
+            _mm256_storeu_ps(&L->Weights[i][j],v_w);
+        }
+        for (; j < L->cols; j++) {
+             L->Weights[i][j] += Learning_Rate*dL->Weights[i][j];
+        }
+    }
+    
 }
-
-// __attribute__((target("avx512f")))
-// void param_update_avx512(struct layer* L, struct layer* dL, float Learning_Rate) {
-//     if(dL->rows != L->rows || dL->cols != L->cols){perror("Gradient and Layer shape mismatch");exit(1);}
-//     __m512 lr_vec = _mm512_set1_ps(Learning_Rate);
-//     int simd_elem = L->rows / 16;
-
-//     for(int i = 0; i < simd_elem; i++){
-//         __m512 biases = _mm512_loadu_ps(&L->biases[i * 16]);
-//         __m512 dbias = _mm512_loadu_ps(&dL->biases[i * 16]);
-//         __m512 update = _mm512_mul_ps(lr_vec, dbias);
-//         biases = _mm512_sub_ps(biases, update);
-//         _mm512_storeu_ps(&L->biases[i * 16], biases);
-//     }
-
-//     for (int i = simd_elem * 16; i < L->rows; i++) {
-//         L->biases[i] -= Learning_Rate * dL->biases[i];
-//     }
-
-//     for (int i = 0; i < dL->rows; i++) {
-//         for (int j = 0; j < dL->cols; j++) {
-//             L->Weights[i][j] += Learning_Rate * dL->Weights[i][j];
-//         }
-//     }
-// }
-
 
 /// @brief Clears the Given layer
 /// @param L Layer

@@ -177,7 +177,7 @@ int main(){
             batch_time += bt;
         }
         batch_time /= size;
-        printf("Average Batch time : %f\n Batch size 32", batch_time);
+        printf("Average Batch time : %f\n Batch size 32\n", batch_time);
     }
     
     image_data_finalizer(pixel_data);
