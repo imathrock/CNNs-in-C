@@ -12,7 +12,7 @@
 
 // Structure containing pointers to Weights and biases of the layers.
 typedef struct layer {
-    float** Weights;
+    float* Weights;
     float* biases;
     int rows;
     int cols;

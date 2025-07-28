@@ -6,6 +6,9 @@
 
 #include <immintrin.h> // Header for AVX intrinsics
 
+#define L_WEIGHT(L, i, j)  (L->Weights[((i) * (L)->cols) + (j)])
+
+
 /// @brief Initializes a layer struct with guards in place to prevent memory leak in case malloc fails.
 /// @param rows number of rows in both bias and weight matrix.
 /// @param cols number of columns in weight matrix.
@@ -23,28 +26,17 @@ struct layer*init_layer(int rows, int cols){
         free(Layer);
         return NULL;
     }
-    Layer->Weights = (float**)malloc(rows * sizeof(float*));
+    Layer->Weights = (float*)malloc(rows*cols*sizeof(float));
     if (Layer->Weights == NULL) {
         perror("Failed to allocate memory for Layer->Weights");
         free(Layer->biases);
         free(Layer);
         return NULL;
     }
-    for(int i = 0; i < r; i++){
-        Layer->biases[i] = (float)rand()/((float)RAND_MAX) - 0.5;
-        Layer->Weights[i] = (float*)malloc(c*sizeof(float));
-        if (Layer->Weights[i] == NULL) {
-            perror("Failed to allocate memory for Layer->Weights[i]");
-            for (int j = 0; j < i; j++) {free(Layer->Weights[j]);}
-            free(Layer->Weights);
-            free(Layer->biases);
-            free(Layer);
-            return NULL;
-        }
-        for(int j = 0; j < c; j++){
+    for (int i = 0; i < r; i++){ Layer->biases[i] = (float)rand()/((float)RAND_MAX) - 0.5; }
+    for(int i = 0; i < r*c; i++){
             float scale = sqrt(2.0 / (float)Layer->cols);
-            Layer->Weights[i][j] = ((float)rand() / (float)RAND_MAX) * 2 * scale - scale;
-        }
+            Layer->Weights[i] = ((float)rand() / (float)RAND_MAX) * 2 * scale - scale;
     }
     return Layer;
 }
@@ -58,12 +50,6 @@ void free_layer(struct layer*Layer){
         Layer->biases = NULL; 
     }
     if (Layer->Weights != NULL) {
-        for (int i = 0; i < Layer->rows; i++) {
-            if (Layer->Weights[i] != NULL) {
-                free(Layer->Weights[i]);
-                Layer->Weights[i] = NULL;
-            }
-        }
         free(Layer->Weights);
         Layer->Weights = NULL;
     }
@@ -110,7 +96,7 @@ void forward_prop_step(struct activations*A1,struct layer*L,struct activations*A
         __m256 sum_vec = _mm256_setzero_ps();
         int j;
         for(j = 0; j+7<L->cols; j+=8){
-            __m256 weightvec = _mm256_loadu_ps(&L->Weights[i][j]);
+            __m256 weightvec = _mm256_loadu_ps(&L_WEIGHT(L,i,j));
             __m256 act_vec = _mm256_loadu_ps(&A1->activations[j]);
             __m256 mulvec = _mm256_mul_ps(weightvec,act_vec);
             sum_vec = _mm256_add_ps(mulvec,sum_vec);
@@ -121,7 +107,7 @@ void forward_prop_step(struct activations*A1,struct layer*L,struct activations*A
         bottom = _mm_hadd_ps(bottom,bottom);
         bottom = _mm_hadd_ps(bottom,bottom);
         buf[i] = _mm_cvtss_f32(bottom);
-        for(; j < L->cols; j++){ buf[i] += L->Weights[i][j]*A1->activations[j]; }
+        for(; j < L->cols; j++){ buf[i] += L_WEIGHT(L,i,j)*A1->activations[j]; }
     }
     int i = 0;
     for(; i+7 < L->rows; i+=8){
@@ -227,13 +213,13 @@ void calc_grad_activation(struct activations* dZ_curr,struct layer*L,struct acti
     if(dZ_curr->size != A_curr->size){perror("The ReLU deriv and n-1 grad activation matricies do not match");exit(1);}
     if(L->rows != dZ_prev->size){perror("The Layer matricies and gradient layer matricies do not match");exit(1);}
     if(L->cols != dZ_curr->size){perror("The Layer matricies and curr_grad layer matricies do not match");exit(1);}
-    memcpy(dZ_curr->activations,A_curr->activations,sizeof(float)*dZ_curr->size);
-    for (int i = 0; i < L->cols; i++){
-        float t = 0.0f;
-        for (int j = 0; j < L->rows; j++){
-            t += L->Weights[j][i]*dZ_prev->activations[j];
+    // memcpy(dZ_curr->activations,A_curr->activations,sizeof(float)*dZ_curr->size);
+    for (int i = 0; i < L->cols; i++) {
+        float sum = 0.0f;
+        for (int j = 0; j < L->rows; j++) {
+            sum += L_WEIGHT(L, j, i) * dZ_prev->activations[j];  // Column-wise sum
         }
-        dZ_curr->activations[i] *= t;
+        dZ_curr->activations[i] = sum * A_curr->activations[i];
     }
 }
 
@@ -254,9 +240,9 @@ void back_propogate_step(struct layer*L,struct layer*dL,struct activations* dZ,s
         for (j = 0; j+7 < dL->cols; j+=8){
             __m256 A_vec = _mm256_loadu_ps(&A->activations[j]);
             __m256 weight_vec = _mm256_mul_ps(dZ_vec,A_vec);
-            _mm256_storeu_ps(&dL->Weights[i][j],weight_vec);
+            _mm256_storeu_ps(&L_WEIGHT(dL,i,j),weight_vec);
         }
-        for (; j<dL->cols; j++) dL->Weights[i][j] = dZ->activations[i]*A->activations[j];
+        for (; j<dL->cols; j++) L_WEIGHT(dL,i,j) = dZ->activations[i]*A->activations[j];
     }
 }
 
@@ -293,14 +279,14 @@ void param_update(struct layer*L,struct layer*dL, float LR){
     for (int i = 0; i < dL->rows; i++){
         int j = 0;
         for (; j+7 < dL->cols; j+=8){
-            __m256 v_w = _mm256_loadu_ps(&L->Weights[i][j]);
-            __m256 vdW = _mm256_loadu_ps(&dL->Weights[i][j]);
+            __m256 v_w = _mm256_loadu_ps(&L_WEIGHT(L,i,j));
+            __m256 vdW = _mm256_loadu_ps(&L_WEIGHT(dL,i,j));
             __m256 mulvec = _mm256_mul_ps(LR_vec,vdW);
             v_w = _mm256_sub_ps(v_w,mulvec);
-            _mm256_storeu_ps(&L->Weights[i][j],v_w);
+            _mm256_storeu_ps(&L_WEIGHT(L,i,j),v_w);
         }
         for (; j < L->cols; j++) {
-             L->Weights[i][j] += LR*dL->Weights[i][j];
+             L_WEIGHT(L,i,j) += LR*L_WEIGHT(dL,i,j);
         }
     }
     
@@ -310,7 +296,7 @@ void param_update(struct layer*L,struct layer*dL, float LR){
 /// @param L Layer
 void Zero_Layer(struct layer*L){
     if(L->biases) memset(L->biases,0.0f,L->rows*sizeof(float)); //memset to 0;
-    for (int i = 0; i < L->rows; i++) memset(L->Weights[i],0.0f,L->cols*sizeof(float)); 
+    if(L->Weights) memset(L->Weights,0.0f,L->rows*L->cols*sizeof(float));
 }
 
 /// @brief Inputs image data into activation struct
@@ -357,7 +343,7 @@ void print_layer(const struct layer* l) {
     printf("Weights:\n");
     for (int i = 0; i < l->rows; i++) {
         for (int j = 0; j < l->cols; j++) {
-            printf("%8.4f ", l->Weights[i][j]); // Format weights for readability
+            printf("%8.4f ", L_WEIGHT(l,i,j)); // Format weights for readability
         }
         printf("\n");
     }
