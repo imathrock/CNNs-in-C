@@ -19,20 +19,6 @@ void print_ascii_art(Image2D img) {
     }
 }
 
-// Add this helper function
-void print_pool_indices(int* UPMD, int pooled_rows, int pooled_cols, int unpooled_size) {
-    printf("Pool indices validation:\n");
-    for(int i = 0; i < pooled_rows; i++) {
-        for(int j = 0; j < pooled_cols; j++) {
-            int idx = UPMD[i * pooled_cols + j];
-            printf("(%d,%d): idx=%d %s\n", 
-                   i, j, idx, 
-                   (idx >= 0 && idx < unpooled_size) ? "valid" : "INVALID");
-        }
-    }
-}
-
-
 int main(){
 
     FILE* file = fopen("mnist/train-images.idx3-ubyte", "rb");
@@ -49,7 +35,7 @@ int main(){
     int size = pixel_data->size/BATCH_SIZE; 
     
     // layer sizes
-    int lay1 = 121;
+    int lay1 = 242;
     int lay2 = 100;
     int lay3 = 10;
     
@@ -85,12 +71,15 @@ int main(){
     
     // Create Kernels
     Image2D kernel1 = CreateKernel(5, 5);
+    Image2D kernel2 = CreateKernel(5, 5);
     
     // Create del kernels
     Image2D del_kernel1 = CreateKernel(5, 5);
+    Image2D del_kernel2 = CreateKernel(5, 5);
     
     // Create sum del kernels
     Image2D sum_del_kernel1 = CreateKernel(5, 5);
+    Image2D sum_del_kernel2 = CreateKernel(5, 5);
     
     
     while(epoch--){
@@ -100,11 +89,15 @@ int main(){
             for (int k = (BATCH_SIZE*j); k < (BATCH_SIZE*(j+1)); k++){
                 ImageInput(image,pixel_data->neuron_activation[k]);
                 Image2D convimg1 = Conv2D(kernel1,image);
-                Image2D Poolimg = MAXPOOL(convimg1,2,2);
+                Image2D convimg2 = Conv2D(kernel2,image);
+                
+                Image2D Poolimg1 = MAXPOOL(convimg1,2,2);
+                Image2D Poolimg2 = MAXPOOL(convimg2,2,2);
                 // printf("numrows:%i,  numcols:%i, total: %i\n",Poolimg.rows,Poolimg.cols,Poolimg.rowss*Poolimg.cols);
                 // Assume AL1->activations is float*, convimgX.Data is float*, all properly sized
-                int img_size = AL1->size;
-                memcpy(AL1->activations, Poolimg.Data, img_size * sizeof(float));
+                int img_size = AL1->size/2;
+                memcpy(AL1->activations, Poolimg1.Data, img_size * sizeof(float));
+                memcpy(AL1->activations + img_size, Poolimg2.Data, img_size * sizeof(float));
 
                 // Forward Propagation
                 ReLU(AL1); // Relu image
@@ -120,16 +113,20 @@ int main(){
                 ReLU_derivative(AL1,dZAL1_ReLU); // relu deriv
                 calc_grad_activation(dZAL1,L1,dZAL2, dZAL1_ReLU); // First layer gradient calc
                 
-                int chunk_size = dZAL1->size;
-                memcpy(Poolimg.Data, dZAL1->activations, chunk_size * sizeof(float));
-                MAXUNPOOL(convimg1,Poolimg);
+                int chunk_size = dZAL1->size/2;
+                memcpy(Poolimg1.Data, dZAL1->activations, chunk_size * sizeof(float));
+                memcpy(Poolimg2.Data, dZAL1->activations + chunk_size, chunk_size * sizeof(float));
+                MAXUNPOOL(convimg1,Poolimg1);
+                MAXUNPOOL(convimg2,Poolimg2);
 
                 backprop_kernel(del_kernel1,kernel1,convimg1,image);
+                backprop_kernel(del_kernel2,kernel2,convimg2,image);
 
                 param_update(sdL1,dL1,1);
                 param_update(sdL2,dL2,1);
 
                 kernel_update(del_kernel1,sum_del_kernel1,1);
+                kernel_update(del_kernel2,sum_del_kernel2,1);
                 
                 total_loss += compute_loss(AL3,lbl_arr[k])/BATCH_SIZE;
             }
@@ -140,7 +137,9 @@ int main(){
             Zero_Layer(sdL1);
             Zero_Layer(sdL2);
             kernel_update(sum_del_kernel1,kernel1,learning_rate*0.01f);
+            kernel_update(sum_del_kernel2,kernel2,learning_rate*0.01f);
             zero_kernel(sum_del_kernel1);
+            zero_kernel(sum_del_kernel2);
             float bt = ((end-start)/CLOCKS_PER_SEC)*1000;
             printf("\nBatch process time: %f ms\n",bt);
             batch_time += bt;
@@ -162,11 +161,16 @@ int main(){
     for (unsigned int k = 0; k < test_pix_data->size; k++){
         ImageInput(image,test_pix_data->neuron_activation[k]);
 
-                Image2D convimg1 = Conv2D(kernel1,image);                
-                Image2D Poolimg = MAXPOOL(convimg1,2,2);
+                Image2D convimg1 = Conv2D(kernel1,image);
+                Image2D convimg2 = Conv2D(kernel2,image);
+                
+                Image2D Poolimg1 = MAXPOOL(convimg1,2,2);
+                Image2D Poolimg2 = MAXPOOL(convimg2,2,2);
+                // printf("numrows:%i,  numcols:%i, total: %i\n",Poolimg.rows,Poolimg.cols,Poolimg.rowss*Poolimg.cols);
                 // Assume AL1->activations is float*, convimgX.Data is float*, all properly sized
-                int img_size = AL1->size;
-                memcpy(AL1->activations, Poolimg.Data, img_size * sizeof(float));
+                int img_size = AL1->size/2;
+                memcpy(AL1->activations, Poolimg1.Data, img_size * sizeof(float));
+                memcpy(AL1->activations + img_size, Poolimg2.Data, img_size * sizeof(float));
 
                 // Forward Propagation
                 ReLU(AL1); // Relu image
