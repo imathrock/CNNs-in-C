@@ -20,11 +20,11 @@ void ImageReLU(Image2D image);
 
 Image2D Conv2D(Image2D Kernel, Image2D image);
 
-Image2D POOL(char type, Image2D image, int ker_size,int stride,int*UPMD);
+Image2D MAXPOOL(Image2D image, int ker_size,int stride);
 
 void ImageInput(Image2D image, uint8_t*Data);
 
-void UNPOOL(Image2D unpooled,Image2D pooled, int*upmd);
+void MAXUNPOOL(Image2D unpooled,Image2D pooled);
 
 void backprop_kernel(Image2D delKernel,Image2D Kernel, Image2D Unpooled, Image2D Image);
 

@@ -15,7 +15,7 @@ Image2D CreateImage(int rows, int cols){
     image.rows = rows;
     image.cols = cols;
     image.Data = (float*)malloc(sizeof(float)*rows*cols);
-    image.maxidx = malloc(image.cols*image.rows*sizeof(int));;
+    image.maxidx = (int*)malloc(image.cols*image.rows*sizeof(int));
     return image;
 }
 
@@ -73,13 +73,13 @@ Image2D Conv2D(Image2D Kernel, Image2D image){
 /// @return Pooled image
 Image2D MAXPOOL(Image2D image, int ker_size, int stride){
     Image2D ret_img = CreateImage((image.rows-ker_size)/stride+1,(image.cols-ker_size)/stride+1);
-    memset(&ret_img.maxidx,-1,ret_img.cols*ret_img.rows);
+    memset(ret_img.maxidx,-1,sizeof(int)*ret_img.cols*ret_img.rows);
     //looping over return image
     for(int i = 0; i < ret_img.rows; i++){
         for (int j = 0; j < ret_img.cols; j++){
 
             float max = -INFINITY;
-            float idxmax = -1;
+            int idxmax = -1;
             
             // stride indexing
             int strx = i*stride;
@@ -92,6 +92,7 @@ Image2D MAXPOOL(Image2D image, int ker_size, int stride){
                     if(stry+y>=image.cols) continue; 
                     // max check
                     float curr = Img_Data_Obj(image,strx+x,stry+y); // to prevent double loading
+                    // printf("curr: %f \n",curr);
                     if(curr > max){
                         max = curr;
                         idxmax = ((strx+x)*image.cols+(stry+y));
@@ -99,7 +100,10 @@ Image2D MAXPOOL(Image2D image, int ker_size, int stride){
 
                 }
             }
+            // printf("max: %f\n",max);
             Img_Data_Obj(ret_img,i,j) = max;
+            // printf("idxmax: %i\n",idxmax);
+            // printf("i*ret_img.cols+j = %i\n",i*ret_img.cols+j);
             ret_img.maxidx[i*ret_img.cols+j] = idxmax;
         }
     }
@@ -110,7 +114,7 @@ Image2D MAXPOOL(Image2D image, int ker_size, int stride){
 /// @param unpooled return part
 /// @param pooled pooled image
 /// @param UPMD metadata
-void UNMAXPOOL(Image2D unpooled, Image2D pooled) {
+void MAXUNPOOL(Image2D unpooled, Image2D pooled) {
     // Zero out the unpooled image
     memset(unpooled.Data,0.0f,sizeof(float)*unpooled.rows*unpooled.cols);
     // Unpool with bounds checking
@@ -118,7 +122,7 @@ void UNMAXPOOL(Image2D unpooled, Image2D pooled) {
         if(pooled.maxidx[i] < 0 || pooled.maxidx[i] > unpooled.rows*unpooled.cols) continue;
         else{ unpooled.Data[pooled.maxidx[i]] = pooled.Data[i]; }
     }
-    
+
 }
 
 /**

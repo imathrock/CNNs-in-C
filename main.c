@@ -49,7 +49,7 @@ int main(){
     int size = pixel_data->size/BATCH_SIZE; 
     
     // layer sizes
-    int lay1 = 1600;
+    int lay1 = 121;
     int lay2 = 100;
     int lay3 = 10;
     
@@ -84,22 +84,13 @@ int main(){
     Image2D image = CreateImage(pixel_data->rows, pixel_data->cols);
     
     // Create Kernels
-    Image2D kernel1 = CreateKernel(8, 8);
-    Image2D kernel2 = CreateKernel(8, 8);
-    Image2D kernel3 = CreateKernel(8, 8);
-    Image2D kernel4 = CreateKernel(8, 8);
+    Image2D kernel1 = CreateKernel(5, 5);
     
     // Create del kernels
-    Image2D del_kernel1 = CreateKernel(8, 8);
-    Image2D del_kernel2 = CreateKernel(8, 8);
-    Image2D del_kernel3 = CreateKernel(8, 8);
-    Image2D del_kernel4 = CreateKernel(8, 8);
+    Image2D del_kernel1 = CreateKernel(5, 5);
     
     // Create sum del kernels
-    Image2D sum_del_kernel1 = CreateKernel(8, 8);
-    Image2D sum_del_kernel2 = CreateKernel(8, 8);
-    Image2D sum_del_kernel3 = CreateKernel(8, 8);
-    Image2D sum_del_kernel4 = CreateKernel(8, 8);
+    Image2D sum_del_kernel1 = CreateKernel(5, 5);
     
     
     while(epoch--){
@@ -109,17 +100,11 @@ int main(){
             for (int k = (BATCH_SIZE*j); k < (BATCH_SIZE*(j+1)); k++){
                 ImageInput(image,pixel_data->neuron_activation[k]);
                 Image2D convimg1 = Conv2D(kernel1,image);
-                Image2D convimg2 = Conv2D(kernel2,image);
-                Image2D convimg3 = Conv2D(kernel3,image);
-                Image2D convimg4 = Conv2D(kernel4,image);
-
+                Image2D Poolimg = MAXPOOL(convimg1,2,2);
+                // printf("numrows:%i,  numcols:%i, total: %i\n",Poolimg.rows,Poolimg.cols,Poolimg.rowss*Poolimg.cols);
                 // Assume AL1->activations is float*, convimgX.Data is float*, all properly sized
-                int img_size = AL1->size / 4;
-
-                memcpy(AL1->activations,                    convimg1.Data, img_size * sizeof(float));
-                memcpy(AL1->activations + img_size,         convimg2.Data, img_size * sizeof(float));
-                memcpy(AL1->activations + 2 * img_size,     convimg3.Data, img_size * sizeof(float));
-                memcpy(AL1->activations + 3 * img_size,     convimg4.Data, img_size * sizeof(float));
+                int img_size = AL1->size;
+                memcpy(AL1->activations, Poolimg.Data, img_size * sizeof(float));
 
                 // Forward Propagation
                 ReLU(AL1); // Relu image
@@ -135,26 +120,16 @@ int main(){
                 ReLU_derivative(AL1,dZAL1_ReLU); // relu deriv
                 calc_grad_activation(dZAL1,L1,dZAL2, dZAL1_ReLU); // First layer gradient calc
                 
-                int chunk_size = dZAL1->size / 4;
-
-                memcpy(convimg1.Data, dZAL1->activations,                    chunk_size * sizeof(float));
-                memcpy(convimg2.Data, dZAL1->activations + chunk_size,       chunk_size * sizeof(float));
-                memcpy(convimg3.Data, dZAL1->activations + 2 * chunk_size,   chunk_size * sizeof(float));
-                memcpy(convimg4.Data, dZAL1->activations + 3 * chunk_size,   chunk_size * sizeof(float));
-
+                int chunk_size = dZAL1->size;
+                memcpy(Poolimg.Data, dZAL1->activations, chunk_size * sizeof(float));
+                MAXUNPOOL(convimg1,Poolimg);
 
                 backprop_kernel(del_kernel1,kernel1,convimg1,image);
-                backprop_kernel(del_kernel2,kernel2,convimg2,image);
-                backprop_kernel(del_kernel3,kernel3,convimg3,image);
-                backprop_kernel(del_kernel4,kernel4,convimg4,image);
 
                 param_update(sdL1,dL1,1);
                 param_update(sdL2,dL2,1);
 
                 kernel_update(del_kernel1,sum_del_kernel1,1);
-                kernel_update(del_kernel2,sum_del_kernel2,1);
-                kernel_update(del_kernel3,sum_del_kernel3,1);
-                kernel_update(del_kernel4,sum_del_kernel4,1);
                 
                 total_loss += compute_loss(AL3,lbl_arr[k])/BATCH_SIZE;
             }
@@ -164,14 +139,8 @@ int main(){
             param_update(L2,sdL2,-learning_rate);
             Zero_Layer(sdL1);
             Zero_Layer(sdL2);
-            kernel_update(sum_del_kernel1,kernel1,-learning_rate*0.01f);
-            kernel_update(sum_del_kernel2,kernel2,-learning_rate*0.01f);
-            kernel_update(sum_del_kernel3,kernel3,-learning_rate*0.01f);
-            kernel_update(sum_del_kernel4,kernel4,-learning_rate*0.01f);
+            kernel_update(sum_del_kernel1,kernel1,learning_rate*0.01f);
             zero_kernel(sum_del_kernel1);
-            zero_kernel(sum_del_kernel2);
-            zero_kernel(sum_del_kernel3);
-            zero_kernel(sum_del_kernel4);
             float bt = ((end-start)/CLOCKS_PER_SEC)*1000;
             printf("\nBatch process time: %f ms\n",bt);
             batch_time += bt;
@@ -193,18 +162,11 @@ int main(){
     for (unsigned int k = 0; k < test_pix_data->size; k++){
         ImageInput(image,test_pix_data->neuron_activation[k]);
 
-                Image2D convimg1 = Conv2D(kernel1,image);
-                Image2D convimg2 = Conv2D(kernel2,image);
-                Image2D convimg3 = Conv2D(kernel3,image);
-                Image2D convimg4 = Conv2D(kernel4,image);
-
+                Image2D convimg1 = Conv2D(kernel1,image);                
+                Image2D Poolimg = MAXPOOL(convimg1,2,2);
                 // Assume AL1->activations is float*, convimgX.Data is float*, all properly sized
-                int img_size = AL1->size / 4;
-
-                memcpy(AL1->activations,                    convimg1.Data, img_size * sizeof(float));
-                memcpy(AL1->activations + img_size,         convimg2.Data, img_size * sizeof(float));
-                memcpy(AL1->activations + 2 * img_size,     convimg3.Data, img_size * sizeof(float));
-                memcpy(AL1->activations + 3 * img_size,     convimg4.Data, img_size * sizeof(float));
+                int img_size = AL1->size;
+                memcpy(AL1->activations, Poolimg.Data, img_size * sizeof(float));
 
                 // Forward Propagation
                 ReLU(AL1); // Relu image
