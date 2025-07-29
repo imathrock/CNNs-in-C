@@ -9,6 +9,7 @@ typedef struct{
     int rows;
     int cols;
     float *Data;
+    int* maxidx;
 }Image2D;
 
 Image2D CreateImage(int rows, int cols);

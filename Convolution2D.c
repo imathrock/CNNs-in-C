@@ -6,11 +6,16 @@
 
 #include "immintrin.h"
 
+#define Img_Data(I,i,j) (I->Data[((i)*(I->cols))+(j)])
+#define Img_Data_Obj(I,i,j) ((I).Data[((i)*(I).cols)+(j)])
+
+
 Image2D CreateImage(int rows, int cols){
     Image2D image;
     image.rows = rows;
     image.cols = cols;
     image.Data = (float*)malloc(sizeof(float)*rows*cols);
+    image.maxidx = NULL;
     return image;
 }
 
@@ -22,6 +27,7 @@ Image2D CreateKernel(int rows, int cols){
     for(int i = 0; i<rows*cols; i++){
         kernel.Data[i] = (float)rand()/((float)RAND_MAX) - 0.5;
     }
+    kernel.maxidx = NULL;
     return kernel;
 }
 
@@ -35,9 +41,7 @@ void ImageInput(Image2D image, uint8_t*Data){
 /// @brief Normalizes the images pixel values
 /// @param image 
 void ImageReLU(Image2D image){
-    for(int i=0; i<image.cols*image.rows;i++){
-        if(image.Data[i] < 0.0){image.Data[i] = 0.0;}
-    }
+    for(int i=0; i<image.cols*image.rows;i++) image.Data[i] = fmax(0.0f,image.Data[i]);
 }
 
 /// @brief Conducts Convolution operation with the provided kernel and returns the image
@@ -45,10 +49,7 @@ void ImageReLU(Image2D image){
 /// @param image 
 /// @return convoluted image
 Image2D Conv2D(Image2D Kernel, Image2D image){
-    Image2D ret_img;
-    ret_img.rows = image.rows-Kernel.rows;
-    ret_img.cols = image.cols-Kernel.cols;
-    ret_img.Data = calloc(ret_img.cols*ret_img.rows,sizeof(float));
+    Image2D ret_img = CreateImage(image.rows-Kernel.rows,image.cols-Kernel.cols);
     for(int i = 0; i<ret_img.rows;i++){
         for (int j = 0; j < ret_img.cols; j++){
             float dotprod = 0;
@@ -70,71 +71,57 @@ Image2D Conv2D(Image2D Kernel, Image2D image){
 /// @param image the image to do pooling on
 /// @param ker_size size of the kernel that slides over the image
 /// @return Pooled image
-Image2D POOL(char type, Image2D image, int ker_size, int stride, int*UPMD){
-    Image2D ret_img;
-    ret_img.rows = (image.rows-ker_size)/stride+1;
-    ret_img.cols = (image.cols-ker_size)/stride+1;
-    ret_img.Data = calloc(ret_img.cols*ret_img.rows,sizeof(float));
+Image2D MAXPOOL(Image2D image, int ker_size, int stride){
+    Image2D ret_img = CreateImage((image.rows-ker_size)/stride+1,(image.cols-ker_size)/stride+1);
+    ret_img.maxidx = malloc(ret_img.cols*ret_img.rows*sizeof(int));
+    memset(&ret_img.maxidx,-1,ret_img.cols*ret_img.rows);
+    //looping over return image
+    for(int i = 0; i < ret_img.rows; i++){
+        for (int j = 0; j < ret_img.cols; j++){
 
-    if (type == 1) {
-        for (int i = 0; i < ret_img.rows; i++) {
-            for (int j = 0; j < ret_img.cols; j++) {
-                float max = -INFINITY;
-                int max_idx = -1;
-                for (int ki = 0; ki < ker_size; ki++) {
-                    int in_row = i * stride + ki;
-                    if (in_row >= image.rows) continue;
-                    for (int kj = 0; kj < ker_size; kj++) {
-                        int in_col = j * stride + kj;
-                        if (in_col >= image.cols) continue;
-                        int flat_idx = in_row * image.cols + in_col;
-                        float val = image.Data[flat_idx];
-                        if (val > max) {
-                            max = val;
-                            max_idx = flat_idx;
-                            UPMD[i * ret_img.cols + j] = max_idx;
-                        }
+            float max = -INFINITY;
+            float idxmax = -1;
+            
+            // stride indexing
+            int strx = i*stride;
+            int stry = j*stride;
+
+            //looping over kernel size
+            for (int x = 0; x < ker_size; x++){
+                if(strx+x>=image.rows) continue; //bounds check
+                for(int y = 0; y < ker_size; y++){  
+                    if(stry+y>=image.cols) continue; 
+                    // max check
+                    float curr = Img_Data_Obj(image,strx+x,stry+y); // to prevent double loading
+                    if(curr > max){
+                        max = curr;
+                        idxmax = ((strx+x)*image.cols+(stry+y));
                     }
-                }
-                ret_img.Data[i * ret_img.cols + j] = max;
-            }
-        }
-    }
 
-    if(type == 2){
-        for(int i = 0; i<ret_img.rows;i++){
-            for (int j = 0; j < ret_img.cols; j++){
-                float avg = 0.0f;
-                for (int ki = 0; ki < ker_size; ki++){
-                    int ridx = (((i*stride)+ki)*image.cols);
-                    for(int kj = 0; kj < ker_size; kj++){
-                        int cidx = ((j*stride)+kj);
-                        avg += image.Data[ridx+cidx];}
                 }
-                avg /= ker_size*ker_size;
-                ret_img.Data[i*ret_img.cols+j] = avg;}
+            }
+            Img_Data_Obj(ret_img,i,j) = max;
+            ret_img.maxidx[i*ret_img.cols+j] = idxmax;
         }
     }
     return ret_img;
 }
 
-// /// @brief Unpools the image from a pooled image and with metadata
-// /// @param unpooled return part
-// /// @param pooled pooled image
-// /// @param UPMD metadata
-// void UNPOOL(Image2D unpooled, Image2D pooled, int* UPMD) {
-//     // Zero out the unpooled image
-//     memset(&unpooled->Data,0.0f,unpooled->rows*unpooled->cols);
-//     // Unpool with bounds checking
-//     for(int i = 0; i < pooled.rows*pooled.cols; i++) {
-//         if(UPMD[i] >= 0 && UPMD[i] < unpooled.rows*unpooled.cols) {
-//             unpooled.Data[UPMD[i]] = pooled.Data[i];
-//         } else {
-//             fprintf(stderr, "Invalid index in UPMD[%d] : %i\n",i, UPMD[i]);
-//             // Handle error - either continue or exit
-//         }
-//     }
-// }
+/// @brief Unpools the image from a pooled image and with metadata
+/// @param unpooled return part
+/// @param pooled pooled image
+/// @param UPMD metadata
+void UNMAXPOOL(Image2D unpooled, Image2D pooled) {
+    // Zero out the unpooled image
+    memset(unpooled.Data,0.0f,sizeof(float)*unpooled.rows*unpooled.cols);
+    // Unpool with bounds checking
+    for(int i = 0; i < pooled.rows*pooled.cols; i++) {
+        if(pooled.maxidx[i] < 0 || pooled.maxidx[i] > unpooled.rows*unpooled.cols) continue;
+        else{
+            unpooled.Data[pooled.maxidx[i]] = pooled.Data[i];
+        }
+    }
+}
 
 /**
  * @brief Updates the convolution kernel using backpropagation.
