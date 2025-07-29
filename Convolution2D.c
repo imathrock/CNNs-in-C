@@ -15,7 +15,7 @@ Image2D CreateImage(int rows, int cols){
     image.rows = rows;
     image.cols = cols;
     image.Data = (float*)malloc(sizeof(float)*rows*cols);
-    image.maxidx = NULL;
+    image.maxidx = malloc(image.cols*image.rows*sizeof(int));;
     return image;
 }
 
@@ -73,7 +73,6 @@ Image2D Conv2D(Image2D Kernel, Image2D image){
 /// @return Pooled image
 Image2D MAXPOOL(Image2D image, int ker_size, int stride){
     Image2D ret_img = CreateImage((image.rows-ker_size)/stride+1,(image.cols-ker_size)/stride+1);
-    ret_img.maxidx = malloc(ret_img.cols*ret_img.rows*sizeof(int));
     memset(&ret_img.maxidx,-1,ret_img.cols*ret_img.rows);
     //looping over return image
     for(int i = 0; i < ret_img.rows; i++){
@@ -117,10 +116,9 @@ void UNMAXPOOL(Image2D unpooled, Image2D pooled) {
     // Unpool with bounds checking
     for(int i = 0; i < pooled.rows*pooled.cols; i++) {
         if(pooled.maxidx[i] < 0 || pooled.maxidx[i] > unpooled.rows*unpooled.cols) continue;
-        else{
-            unpooled.Data[pooled.maxidx[i]] = pooled.Data[i];
-        }
+        else{ unpooled.Data[pooled.maxidx[i]] = pooled.Data[i]; }
     }
+    
 }
 
 /**
