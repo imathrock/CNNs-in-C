@@ -1,17 +1,65 @@
 # CNNs-in-C
-Bulding upon the MNIST from scratch in C project, this project is an upgrade in the capabilities and speed of my codebase. The following are the list of things added:
 
-## Features:
-- Convolution 2D functions like conv2d and pooling. 
-- new image data struct.
-- modified layer weights from being 2D to 1D for better cache friendliness, speed and simplicity of transpose operation.
-- AVX SIMD vectorization for faster training.
-    - achieved about 2x speedup on AMD cpus and 1.3x on intel from just vectorizing MLP functions.
-    - Uses AVX 256, so it supports all computers built after 2013.
-    - side note: this code is faster on intel CPUs because either intel's SIMD is better optimized or the compiler is better, haven't figured it out exactly why yet.
+**CNNs-in-C** builds upon the "MNIST from scratch in C" project, adding significant performance improvements and support for convolutional neural networks. This version focuses on increasing training speed, improving data structures, and incorporating low-level optimizations such as SIMD vectorization and cache-friendly memory layouts.
 
-## Features to be added:
-- multiple convolution layers
-- better user interface so that using it is easier.
-- A way to deploy the model for inference. (probably in a new project)
-- multithreading and openCL to make it faster. (CUDA done on a Nvdia GPU but i dont have access to one)
+## Features
+
+### Core Neural Network Enhancements
+
+* **2D Convolution and Pooling**
+  Implemented `conv2d` and pooling operations to support convolutional neural networks.
+
+* **Improved Image Data Structure**
+  Introduced a new structure for handling image data more efficiently, it now stores the metadata for Unpooling more efficiently.
+
+* **Optimized Weight Storage**
+  Changed layer weights from 2D arrays to flattened 1D arrays for:
+
+  * Improved cache performance
+  * Simplified transpose operations
+  * Easier integration with SIMD vectorization
+
+### Performance Improvements
+
+* **AVX SIMD Vectorization**
+  Vectorized dense layer operations using AVX 256-bit instructions, resulting in:
+
+  * Approximately 2 to 3 times speedup on AMD CPUs
+  * Approximately 1.5 to 2 times speedup on Intel CPUs
+    This optimization supports all CPUs released after 2013.
+    Note: Intel CPUs currently perform better, possibly due to more optimized SIMD support or compiler behavior. I dont know why yet.
+
+* **OpenMP Multithreading (Experimental)**
+  Multithreading was explored using OpenMP, but the overhead from thread creation outweighed the benefits for small models. The project currently remains single-threaded.
+
+## Model Accuracy
+
+* Fashion MNIST: 91%
+* MNIST: 94%
+
+These results can likely be improved further. There may be some performance degradation due to internal covariate shift.
+
+## Upcoming Features
+
+* SIMD-based batch normalization
+* A CIFAR-10 model
+* A Galaxy Image classifier (The whole reason I started this whole thing)
+
+## Planned Improvements
+
+* Improved user interface for easier usage
+* A dedicated inference-only deployment project
+* OpenCL acceleration for matrix multiplication
+* Introduction of a tensor abstraction to simplify operations (potentially in a separate project)
+* Auto-differentiation support
+
+## Getting Started
+
+To build and run the project:
+
+```bash
+make
+./main
+```
+
+Ensure your system supports AVX256 (any CPU released after 2013 should be compatible). Any improvement suggestions are welcome.
