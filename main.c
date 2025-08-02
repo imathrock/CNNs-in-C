@@ -7,6 +7,7 @@
 #include"NN-funcs/NeuralNetwork.h"
 
 #define BATCH_SIZE 32
+#define NUM_KERNELS 7
 
 void print_ascii_art(Image2D img) {
     for (int i = 0; i < img.rows; i++) {
@@ -21,24 +22,26 @@ void print_ascii_art(Image2D img) {
 
 int main(){
 
-    FILE* file = fopen("mnist/train-images.idx3-ubyte", "rb");
+    FILE* file = fopen("fashion-mnist/train-images-idx3-ubyte", "rb");
     struct pixel_data* pixel_data = get_image_pixel_data(file);
     fclose(file);
-    file = fopen("mnist/train-labels.idx1-ubyte", "rb");
+    file = fopen("fashion-mnist/train-labels-idx1-ubyte", "rb");
     unsigned char* lbl_arr = get_image_labels(file);
     fclose(file);
     
     // Training parameters
     float batch_time = 0.0f;
     int epoch = 1;
-    float learning_rate = 0.001f;
+    float learning_rate = 0.0001f;
     int size = pixel_data->size/BATCH_SIZE; 
     
     // layer sizes
-    int lay1 = 242;
+    int lay1 = 121*NUM_KERNELS;
     int lay2 = 100;
     int lay3 = 10;
     
+    
+
     // Init Activation buffers
     struct activations* AL1 = init_activations(lay1);
     struct activations* AL2 = init_activations(lay2);
@@ -70,17 +73,17 @@ int main(){
     Image2D image = CreateImage(pixel_data->rows, pixel_data->cols);
     
     // Create Kernels
-    Image2D kernel1 = CreateKernel(5, 5);
-    Image2D kernel2 = CreateKernel(5, 5);
+    Image2D kernels[NUM_KERNELS];
+    Image2D del_kernel[NUM_KERNELS];
+    Image2D sum_del_kernel[NUM_KERNELS];
+    for (int i = 0; i < NUM_KERNELS; i++){
+        kernels[i] = CreateKernel(5, 5);
+        del_kernel[i] = CreateKernel(5, 5);
+        sum_del_kernel[i] = CreateKernel(5, 5);
+    }
     
-    // Create del kernels
-    Image2D del_kernel1 = CreateKernel(5, 5);
-    Image2D del_kernel2 = CreateKernel(5, 5);
-    
-    // Create sum del kernels
-    Image2D sum_del_kernel1 = CreateKernel(5, 5);
-    Image2D sum_del_kernel2 = CreateKernel(5, 5);
-    
+    Image2D convimg[NUM_KERNELS];
+    Image2D Poolimg[NUM_KERNELS];
     
     while(epoch--){
         for (int j = 0; j < size; j++){
@@ -88,17 +91,13 @@ int main(){
             float start = clock();
             for (int k = (BATCH_SIZE*j); k < (BATCH_SIZE*(j+1)); k++){
                 ImageInput(image,pixel_data->neuron_activation[k]);
-                Image2D convimg1 = Conv2D(kernel1,image);
-                Image2D convimg2 = Conv2D(kernel2,image);
+                for (int i = 0; i < NUM_KERNELS; i++){
+                    convimg[i] = Conv2D(kernels[i],image);
+                    Poolimg[i] = MAXPOOL(convimg[i],2,2);
+                    int imgsize = Poolimg[i].rows*Poolimg[i].cols;
+                    memcpy(AL1->activations+i*imgsize, Poolimg[i].Data,imgsize*sizeof(float));
+                }
                 
-                Image2D Poolimg1 = MAXPOOL(convimg1,2,2);
-                Image2D Poolimg2 = MAXPOOL(convimg2,2,2);
-                // printf("numrows:%i,  numcols:%i, total: %i\n",Poolimg.rows,Poolimg.cols,Poolimg.rowss*Poolimg.cols);
-                // Assume AL1->activations is float*, convimgX.Data is float*, all properly sized
-                int img_size = AL1->size/2;
-                memcpy(AL1->activations, Poolimg1.Data, img_size * sizeof(float));
-                memcpy(AL1->activations + img_size, Poolimg2.Data, img_size * sizeof(float));
-
                 // Forward Propagation
                 ReLU(AL1); // Relu image
                 forward_prop_step(AL1, L1, AL2); // forward prop layer 1
@@ -113,20 +112,15 @@ int main(){
                 ReLU_derivative(AL1,dZAL1_ReLU); // relu deriv
                 calc_grad_activation(dZAL1,L1,dZAL2, dZAL1_ReLU); // First layer gradient calc
                 
-                int chunk_size = dZAL1->size/2;
-                memcpy(Poolimg1.Data, dZAL1->activations, chunk_size * sizeof(float));
-                memcpy(Poolimg2.Data, dZAL1->activations + chunk_size, chunk_size * sizeof(float));
-                MAXUNPOOL(convimg1,Poolimg1);
-                MAXUNPOOL(convimg2,Poolimg2);
-
-                backprop_kernel(del_kernel1,kernel1,convimg1,image);
-                backprop_kernel(del_kernel2,kernel2,convimg2,image);
-
+                for (int i = 0; i < NUM_KERNELS; i++){
+                    int imgsize = Poolimg[i].rows*Poolimg[i].cols;
+                    memcpy(Poolimg[i].Data,dZAL1->activations+i*imgsize,imgsize*sizeof(float));
+                    MAXUNPOOL(convimg[i],Poolimg[i]);
+                    backprop_kernel(del_kernel[i],kernels[i],convimg[i],image);
+                    kernel_update(del_kernel[i],sum_del_kernel[i],1);
+                }
                 param_update(sdL1,dL1,1);
                 param_update(sdL2,dL2,1);
-
-                kernel_update(del_kernel1,sum_del_kernel1,1);
-                kernel_update(del_kernel2,sum_del_kernel2,1);
                 
                 total_loss += compute_loss(AL3,lbl_arr[k])/BATCH_SIZE;
             }
@@ -136,10 +130,10 @@ int main(){
             param_update(L2,sdL2,-learning_rate);
             Zero_Layer(sdL1);
             Zero_Layer(sdL2);
-            kernel_update(sum_del_kernel1,kernel1,learning_rate*0.01f);
-            kernel_update(sum_del_kernel2,kernel2,learning_rate*0.01f);
-            zero_kernel(sum_del_kernel1);
-            zero_kernel(sum_del_kernel2);
+            for (int i = 0; i < NUM_KERNELS; i++){
+                kernel_update(sum_del_kernel[i],kernels[i],learning_rate);
+                zero_kernel(sum_del_kernel[i]);
+            }
             float bt = ((end-start)/CLOCKS_PER_SEC)*1000;
             printf("\nBatch process time: %f ms\n",bt);
             batch_time += bt;
@@ -150,34 +144,30 @@ int main(){
     
     image_data_finalizer(pixel_data);
     image_label_finalizer(lbl_arr);
-
-    FILE* test_file = fopen("mnist/t10k-labels.idx1-ubyte", "r");
-    unsigned char* test_lbl_arr = get_image_labels(test_file);
-    test_file = fopen("mnist/t10k-images.idx3-ubyte", "rb");
+    
+    FILE* test_file = fopen("fashion-mnist/t10k-images-idx3-ubyte", "rb");
     struct pixel_data* test_pix_data = get_image_pixel_data(test_file);
-
+    test_file = fopen("fashion-mnist/t10k-labels-idx1-ubyte", "rb");
+    unsigned char* test_lbl_arr = get_image_labels(test_file);
+    
     printf("\n\nCalculating accuracy:-\n\n");
     int correct_pred = 0;
     for (unsigned int k = 0; k < test_pix_data->size; k++){
         ImageInput(image,test_pix_data->neuron_activation[k]);
+        
+        for (int i = 0; i < NUM_KERNELS; i++){
+            convimg[i] = Conv2D(kernels[i],image);
+            Poolimg[i] = MAXPOOL(convimg[i],2,2);
+            int imgsize = Poolimg[i].rows*Poolimg[i].cols;
+            memcpy(AL1->activations+i*imgsize, Poolimg[i].Data,imgsize*sizeof(float));
+        }
 
-                Image2D convimg1 = Conv2D(kernel1,image);
-                Image2D convimg2 = Conv2D(kernel2,image);
-                
-                Image2D Poolimg1 = MAXPOOL(convimg1,2,2);
-                Image2D Poolimg2 = MAXPOOL(convimg2,2,2);
-                // printf("numrows:%i,  numcols:%i, total: %i\n",Poolimg.rows,Poolimg.cols,Poolimg.rowss*Poolimg.cols);
-                // Assume AL1->activations is float*, convimgX.Data is float*, all properly sized
-                int img_size = AL1->size/2;
-                memcpy(AL1->activations, Poolimg1.Data, img_size * sizeof(float));
-                memcpy(AL1->activations + img_size, Poolimg2.Data, img_size * sizeof(float));
-
-                // Forward Propagation
-                ReLU(AL1); // Relu image
-                forward_prop_step(AL1, L1, AL2); // forward prop layer 1
-                ReLU(AL2); // Relu hidden 1
-                forward_prop_step(AL2, L2, AL3); // forward prop layer 2
-                softmax(AL3); // Softmax output layer
+        // Forward Propagation
+        ReLU(AL1); // Relu image
+        forward_prop_step(AL1, L1, AL2); // forward prop layer 1
+        ReLU(AL2); // Relu hidden 1
+        forward_prop_step(AL2, L2, AL3); // forward prop layer 2
+        softmax(AL3); // Softmax output layer
         if(test_lbl_arr[k] == get_pred_from_softmax(AL3)){correct_pred++;}
         if (k%100 == 0){printf(".");}
     }
