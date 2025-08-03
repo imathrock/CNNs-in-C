@@ -97,6 +97,9 @@ void input_data(struct pixel_data* pixel_data, int k, struct activation* A);
 // Gets the largest activation value and returns it.
 int get_pred_from_softmax(struct activation* A);
 
+// test StandardizeActivations
+void StandardizeActivations(activation *A);
+
 // Prints out activation values for debugging.
 void print_activation(struct activation* A);
 

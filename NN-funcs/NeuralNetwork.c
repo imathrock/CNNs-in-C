@@ -359,6 +359,52 @@ int get_pred_from_softmax(struct activation *A) {
     return max_index;
 }
 
+/// @brief Standardizes the activations
+/// @param A 
+void StandardizeActivations(activation *A){
+    float sum = 0.0f;
+    __m256 sumvec = _mm256_setzero_ps();
+    int i;
+    for (i = 0; i+7 < A->size; i+=8){
+        __m256 actvec = _mm256_loadu_ps(&A->activation[i]);
+        sumvec = _mm256_add_ps(sumvec,actvec);
+    }
+    __m128 bottom = _mm256_castps256_ps128(sumvec);
+    __m128 top = _mm256_extractf128_ps(sumvec,1);
+    bottom = _mm_add_ps(top,bottom);
+    bottom = _mm_hadd_ps(bottom,bottom);
+    bottom = _mm_hadd_ps(bottom,bottom);
+    sum = _mm_cvtss_f32(bottom);
+    for (; i < A->size; i++) sum += A->activation[i];
+    float mean = sum/A->size;
+    float var = 0.0f;
+    __m256 meanvec = _mm256_set1_ps(mean);
+    __m256 varvec = _mm256_setzero_ps();
+    i = 0;
+    for(; i+7 < A->size; i+=8){
+        __m256 actvec = _mm256_loadu_ps(&A->activation[i]);
+        varvec = _mm256_sub_ps(actvec,meanvec);
+        varvec = _mm256_mul_ps(varvec,varvec);
+    }
+    bottom = _mm256_castps256_ps128(varvec);
+    top = _mm256_extractf128_ps(varvec,1);
+    bottom = _mm_add_ps(top,bottom);
+    bottom = _mm_hadd_ps(bottom,bottom);
+    bottom = _mm_hadd_ps(bottom,bottom);
+    var = _mm_cvtss_f32(bottom);
+    for(; i < A->size; i++) var += pow(A->activation[i]-mean,2);
+    var /= A->size;
+    var = sqrt(var) + 0.00000001;
+    varvec = _mm256_set1_ps(var);
+    i = 0;
+    for(; i+7 < A->size; i+=8){
+        __m256 actvec = _mm256_loadu_ps(&A->activation[i]);
+        actvec = _mm256_sub_ps(actvec, meanvec);
+        actvec = _mm256_div_ps(actvec,varvec);
+        _mm256_storeu_ps(&A->activation[i],actvec);
+    }
+    for(;i < A->size; i++) A->activation[i] /= var;
+}
 
 /// @brief Prints out activation values for debugging
 /// @param A 

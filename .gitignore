@@ -2,3 +2,4 @@
 *.exe
 Refactoring guidelines.md
 Refactoring Guidelines.txt
+dataloaders/idx-file-parser.o

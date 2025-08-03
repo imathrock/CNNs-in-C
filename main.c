@@ -8,7 +8,7 @@
 #include<omp.h>
 
 #define BATCH_SIZE 32
-#define NUM_KERNELS 7
+#define NUM_KERNELS 16
 
 void print_ascii_art(Image2D img) {
     for (int i = 0; i < img.rows; i++) {
@@ -32,7 +32,7 @@ int main(){
     
     // Training parameters
     float batch_time = 0.0f;
-    int epoch = 1;
+    int epoch = 10;
     float learning_rate = 0.0001f;
     int size = pixel_data->size/BATCH_SIZE; 
     
@@ -87,7 +87,6 @@ int main(){
     Image2D Poolimg[NUM_KERNELS];
     
     while(epoch--){
-        // #pragma omp parallel
         for (int j = 0; j < size; j++){
             float total_loss = 0.0f;
             float start = clock();
@@ -97,12 +96,14 @@ int main(){
                     convimg[i] = Conv2D(kernels[i],image);
                     Poolimg[i] = MAXPOOL(convimg[i],2,2);
                     int imgsize = Poolimg[i].rows*Poolimg[i].cols;
-                    memcpy(AL1->activations+i*imgsize, Poolimg[i].Data,imgsize*sizeof(float));
+                    memcpy(AL1->activation+i*imgsize, Poolimg[i].Data,imgsize*sizeof(float));
                 }
                 
                 // Forward Propagation
+                StandardizeActivations(AL1);
                 ReLU(AL1); 
                 forward_prop_step(AL1, L1, AL2); 
+                StandardizeActivations(AL2);
                 ReLU(AL2); 
                 forward_prop_step(AL2, L2, AL3); 
                 softmax(AL3); 
@@ -116,7 +117,7 @@ int main(){
                 
                 for (int i = 0; i < NUM_KERNELS; i++){
                     int imgsize = Poolimg[i].rows*Poolimg[i].cols;
-                    memcpy(Poolimg[i].Data,dZAL1->activations+i*imgsize,imgsize*sizeof(float));
+                    memcpy(Poolimg[i].Data,dZAL1->activation+i*imgsize,imgsize*sizeof(float));
                     MAXUNPOOL(convimg[i],Poolimg[i]);
                     backprop_kernel(del_kernel[i],kernels[i],convimg[i],image);
                     kernel_update(del_kernel[i],sum_del_kernel[i],1);
@@ -133,7 +134,7 @@ int main(){
             Zero_Layer(sdL1);
             Zero_Layer(sdL2);
             for (int i = 0; i < NUM_KERNELS; i++){
-                kernel_update(sum_del_kernel[i],kernels[i],learning_rate);
+                kernel_update(sum_del_kernel[i],kernels[i],learning_rate*0.1f);
                 zero_kernel(sum_del_kernel[i]);
             }
             float bt = ((end-start)/CLOCKS_PER_SEC)*1000;
@@ -161,12 +162,14 @@ int main(){
             convimg[i] = Conv2D(kernels[i],image);
             Poolimg[i] = MAXPOOL(convimg[i],2,2);
             int imgsize = Poolimg[i].rows*Poolimg[i].cols;
-            memcpy(AL1->activations+i*imgsize, Poolimg[i].Data,imgsize*sizeof(float));
+            memcpy(AL1->activation+i*imgsize, Poolimg[i].Data,imgsize*sizeof(float));
         }
 
         // Forward Propagation
+        StandardizeActivations(AL1);
         ReLU(AL1); // Relu image
         forward_prop_step(AL1, L1, AL2); // forward prop layer 1
+        StandardizeActivations(AL2);
         ReLU(AL2); // Relu hidden 1
         forward_prop_step(AL2, L2, AL3); // forward prop layer 2
         softmax(AL3); // Softmax output layer
