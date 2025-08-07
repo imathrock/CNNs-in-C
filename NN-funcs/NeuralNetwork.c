@@ -9,37 +9,193 @@
 
 #define L_WEIGHT(L, i, j)  (L->Weights[((i) * (L)->cols) + (j)])
 
+/// @brief Box Muller transform, computes random number on mean=0 and var=1 spectrum. Generates 2 numbers, returns spare on second call.
+/// @return random number
+float randn() {
+    static int has_spare = 0;
+    static float spare;
+    if (has_spare) { 
+        has_spare = 0;
+        return spare;}
+    has_spare = 1;
+    static float u, v, mag;
+    do {
+        u = (float)rand() / RAND_MAX * 2.0 - 1.0;
+        v = (float)rand() / RAND_MAX * 2.0 - 1.0;
+        mag = u * u + v * v;
+    } while (mag >= 1.0 || mag == 0.0);
+    
+    mag = sqrt(-2.0 * log(mag) / mag);
+    spare = v * mag;
+    return u * mag;
+}
 
 /// @brief Initializes a layer struct with guards in place to prevent memory leak in case malloc fails.
 /// @param rows number of rows in both bias and weight matrix.
 /// @param cols number of columns in weight matrix.
-struct layer*init_layer(int rows, int cols){
-    int r = rows; int c = cols;
-    struct layer* Layer = (struct layer*)malloc(sizeof(layer));
+/// @param init_type initialization type (see documentation for options)
+layer* init_layer(int rows, int cols, int init_type) {
+    struct layer* Layer = (struct layer*)malloc(sizeof(struct layer));
     if (Layer == NULL) {
         perror("Failed to allocate memory for Layer");
         return NULL;
     }
-    Layer->cols = cols; Layer->rows = rows;
-    Layer->biases = malloc(r*sizeof(float));
+    
+    Layer->biases = malloc(rows * sizeof(float));
     if (Layer->biases == NULL) {
         perror("Failed to allocate memory for Layer->biases");
         free(Layer);
         return NULL;
     }
-    Layer->Weights = (float*)malloc(rows*cols*sizeof(float));
+    
+    Layer->Weights = (float*)malloc(rows * cols * sizeof(float));
     if (Layer->Weights == NULL) {
         perror("Failed to allocate memory for Layer->Weights");
         free(Layer->biases);
         free(Layer);
         return NULL;
     }
-    for (int i = 0; i < r; i++){ Layer->biases[i] = (float)rand()/((float)RAND_MAX) - 0.5; }
-    for(int i = 0; i < r*c; i++){
-            float scale = sqrt(2.0 / (float)Layer->cols);
-            Layer->Weights[i] = ((float)rand() / (float)RAND_MAX) * 2 * scale - scale;
+
+    // Set biases to 0
+    memset(Layer->biases,0.0f,sizeof(float)*rows);
+
+    // Weight initialization based on type
+    float limit, std_dev, fan_in, fan_out, fan_avg;
+    fan_in = (float)cols;
+    fan_out = (float)rows;
+    fan_avg = (fan_in + fan_out) / 2.0f;
+    
+    switch (init_type) {
+        case 0: // Zero initialization
+            memset(Layer->Weights,0.0f,sizeof(float)*rows*cols);
+            break;
+
+        case 1: // Random uniform [-0.5, 0.5]
+            for (int i = 0; i < rows * cols; i++) {
+                Layer->Weights[i] = ((float)rand() / RAND_MAX) - 0.5f;
+            }
+            break;
+
+        case 2: // Random normal (0, 1)
+            for (int i = 0; i < rows * cols; i++) {
+                Layer->Weights[i] = randn();
+            }
+            break;
+
+        case 3: // Xavier/Glorot Uniform
+            limit = sqrtf(6.0f / (fan_in + fan_out));
+            for (int i = 0; i < rows * cols; i++) {
+                Layer->Weights[i] = ((float)rand() / RAND_MAX * 2.0f - 1.0f) * limit;
+            }
+            break;
+            
+        case 4: // Xavier/Glorot Normal
+            std_dev = sqrtf(2.0f / (fan_in + fan_out));
+            for (int i = 0; i < rows * cols; i++) {
+                Layer->Weights[i] = randn() * std_dev;
+            }
+            break;
+            
+        case 5: // He/Kaiming Uniform (for ReLU)
+            limit = sqrtf(6.0f / fan_in);
+            for (int i = 0; i < rows * cols; i++) {
+                Layer->Weights[i] = ((float)rand() / RAND_MAX * 2.0f - 1.0f) * limit;
+            }
+            break;
+            
+        case 6: // He/Kaiming Normal (for ReLU)
+            std_dev = sqrtf(2.0f / fan_in);
+            for (int i = 0; i < rows * cols; i++) {
+                Layer->Weights[i] = randn() * std_dev;
+            }
+            break;
+            
+        case 7: // LeCun Uniform (for SELU)
+            limit = sqrtf(3.0f / fan_in);
+            for (int i = 0; i < rows * cols; i++) {
+                Layer->Weights[i] = ((float)rand() / RAND_MAX * 2.0f - 1.0f) * limit;
+            }
+            break;
+            
+        case 8: // LeCun Normal (for SELU)
+            std_dev = sqrtf(1.0f / fan_in);
+            for (int i = 0; i < rows * cols; i++) {
+                Layer->Weights[i] = randn() * std_dev;
+            }
+            break;
+            
+        case 9: // Orthogonal initialization
+            // Note: This is a simplified version. True orthogonal init requires SVD
+            std_dev = 1.0f;
+            for (int i = 0; i < rows * cols; i++) {
+                Layer->Weights[i] = randn() * std_dev;
+            }
+            break;
+            
+        case 10: // Identity initialization (only works for square matrices)
+            for (int i = 0; i < rows * cols; i++) {
+                Layer->Weights[i] = 0.0f;
+            }
+            if (rows == cols) {
+                for (int i = 0; i < rows; i++) {
+                    Layer->Weights[i * cols + i] = 1.0f;
+                }
+            }
+            break;
+            
+        case 11: // Variance Scaling Uniform
+            limit = sqrtf(3.0f / fan_avg);
+            for (int i = 0; i < rows * cols; i++) {
+                Layer->Weights[i] = ((float)rand() / RAND_MAX * 2.0f - 1.0f) * limit;
+            }
+            break;
+            
+        case 12: // Variance Scaling Normal
+            std_dev = sqrtf(1.0f / fan_avg);
+            for (int i = 0; i < rows * cols; i++) {
+                Layer->Weights[i] = randn() * std_dev;
+            }
+            break;
+            
+        case 13: // Truncated Normal (approximated)
+            std_dev = sqrtf(2.0f / (fan_in + fan_out));
+            for (int i = 0; i < rows * cols; i++) {
+                float val;
+                do {
+                    val = randn() * std_dev;
+                } while (fabsf(val) > 2.0f * std_dev); // Truncate at 2 standard deviations
+                Layer->Weights[i] = val;
+            }
+            break;
+            
+        case 14: // Small random values
+            for (int i = 0; i < rows * cols; i++) {
+                Layer->Weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 0.01f;
+            }
+            break;
+            
+        default: // Default to Xavier/Glorot Normal
+            std_dev = sqrtf(2.0f / (fan_in + fan_out));
+            for (int i = 0; i < rows * cols; i++) {
+                Layer->Weights[i] = randn() * std_dev;
+            }
+            break;
     }
+    
     return Layer;
+}
+
+/// @brief Inits the full dense layer struct with the grad buffers
+/// @param rows 
+/// @param cols 
+/// @return pointer to the struct
+DenseLayer*init_DenseLayer(int rows,int cols,int init_type){
+    DenseLayer*layers = malloc(sizeof(DenseLayer));
+    layers->cols = cols; layers->rows = rows; layers->init_type = init_type;
+    layers->params = init_layer(rows,cols,init_type);
+    layers->param_grad = init_layer(rows,cols,0);
+    layers->param_grad_sum = init_layer(rows,cols,0);
+    return layers;
 }
 
 /// @brief Frees the Layer struct.
@@ -57,41 +213,6 @@ void free_layer(struct layer*Layer){
     free(Layer);
 }
 
-/// @brief initializes and creates a float array to store the activation in.
-/// @param size of array
-struct activation*init_activation(int size){
-    struct activation*activation_layer = (struct activation*)malloc(sizeof(struct activation));
-    if (activation_layer == NULL) {
-        perror("Failed to allocate memory for Layer");
-        return NULL;
-    }
-    activation_layer->size = size;
-    activation_layer->activation = malloc(size*sizeof(float));
-    for (int i = 0; i < size; i++){
-        activation_layer->activation[i] = (float)rand()/((float)RAND_MAX) - 0.5;
-    }
-    return activation_layer;
-}
-
-/// @brief Frees the activation struct
-/// @param a 
-void free_activation(struct activation*a){
-    free(a->activation);
-    free(a);
-}
-
-/// @brief Inits the full dense layer struct with the grad buffers
-/// @param rows 
-/// @param cols 
-/// @return pointer to the struct
-DenseLayer*init_DenseLayer(int rows,int cols){
-    DenseLayer*layers = malloc(sizeof(DenseLayer));
-    layers->params = init_layer(rows,cols);
-    layers->param_grad = init_layer(rows,cols);
-    layers->param_grad_sum = init_layer(rows,cols);
-    return layers;
-}
-
 /// @brief Finalizer for Dense Layer
 /// @param DL 
 void Free_DenseLayer(DenseLayer*DL){
@@ -107,9 +228,10 @@ void Free_DenseLayer(DenseLayer*DL){
 /// @return 
 activations*init_activations(int size){
     activations*act = malloc(sizeof(activations));
-    act->Z = init_activation(size);
-    act->del_Z = init_activation(size);
-    act->dZ = init_activation(size);
+    act->size = size;
+    act->Z = calloc(size,sizeof(float));
+    act->del_Z = calloc(size,sizeof(float));
+    act->dZ = calloc(size,sizeof(float));
     return act;
 }
 
@@ -163,87 +285,250 @@ void forward_prop_step(struct activation*A1,struct layer*L,struct activation*A2)
     }   
 }
 
-/// @brief Applies ReLU to the activation
-/// @param A 
-void ReLU(struct activation*A){
-    for (int i = 0; i < A->size; i++)
-    {if(A->activation[i] < 0.0){A->activation[i] = 0.0;}}
+/// @brief inline function that prevents overflow in exp
+/// @param x input value
+/// @return safe exponential or clamped value
+static inline float safe_exp(float x){ 
+    return (x > 500.0f || x < -500.0f) ? 0.0f : expf(x); 
 }
 
-/// @brief Takes Derivative of ReLU and puts it other activation struct
-/// @param A 
-/// @param Z_ReLU
-void ReLU_derivative(struct activation*A,struct activation*B){
-    for (int i = 0; i < A->size; i++) 
-    {B->activation[i] = (A->activation[i] <= 0.0) ? 0.0 : 1.0;}
+/// @brief GELU approximation using tanh
+/// @param x input value  
+/// @return GELU approximation
+static inline float gelu_approx(float x){ 
+    return 0.5f * x * (1.0f + tanhf(0.7978845608f * (x + 0.044715f * x * x * x))); 
 }
 
-/// @brief Applies Softmax to the activation layer
-/// @param A 
-void softmax(struct activation* A) {
-    int k = A->size;
-    float max_activation = A->activation[0];
-    for (int i = 1; i < k; i++) {
-        if (A->activation[i] > max_activation) {
-            max_activation = A->activation[i];
+/// @brief Applies enum act_func, simultaneously computes derivatives and stores it.
+/// @param A Activations struct
+/// @param func act func, default identity.
+void activation_function(activations*A,act_func_t func){
+    switch (func){
+    case ReLU:
+        for (int i = 0; i < A->size; i++){
+            if(A->Z[i] <= 0){
+                A->Z[i] = 0; A->dZ[i] = 0;}
+            else{ A->dZ[i] = 1;}
         }
-    }
-    float expsum = 0.0f;
-    for (int i = 0; i < k; i++) {
-        A->activation[i] = exp(A->activation[i] - max_activation); // Numerical stability
-        expsum += A->activation[i];
-    }
-    if (expsum == 0.0f) {
-        perror("Softmax error: expsum is zero");
-        exit(1);
-    }
-    for (int i = 0; i < k; i++) {
-        A->activation[i] /= expsum;
+        break;
+
+    case Sigmoid:
+        for(int i = 0; i < A->size; i++){
+            A->Z[i] = 1.0f/(1.0f+safe_exp(-A->Z[i])); // Fixed: should be -A->Z[i]
+            A->dZ[i] = A->Z[i] * (1.0f-A->Z[i]);
+        }
+        break;
+
+    case Tanh:
+        for(int i = 0; i < A->size; i++){
+            A->Z[i] = tanhf(A->Z[i]);
+            A->dZ[i] = 1.0f - A->Z[i] * A->Z[i]; // Avoid powf, use multiplication
+        }        
+        break;
+
+    case LeakyRelu:
+        {
+        const float alpha = 0.01f; 
+        for (int i = 0; i < A->size; i++) {
+            if (A->Z[i] <= 0) {
+                A->Z[i] *= alpha;
+                A->dZ[i] = alpha;
+            } 
+            else {A->dZ[i] = 1.0f;}
+        }
+        }
+        break;
+
+    case PReLU:
+        {
+        const float alpha = 0.25f; // Should be learnable parameter
+        for (int i = 0; i < A->size; i++) {
+            if (A->Z[i] <= 0) {
+                A->Z[i] *= alpha;
+                A->dZ[i] = alpha;
+            } 
+            else {A->dZ[i] = 1.0f;}
+        }
+        }
+        break;
+
+    case ELU:
+        {
+        const float alpha = 1.0f;
+        for (int i = 0; i < A->size; i++) {
+            if (A->Z[i] <= 0) {
+                A->Z[i] = alpha * (safe_exp(A->Z[i]) - 1.0f);
+                A->dZ[i] = A->Z[i] + alpha; // ELU derivative: f(x) + alpha when x <= 0
+            } 
+            else {A->dZ[i] = 1.0f;}
+        }
+        }
+        break;
+
+    case SELU:
+        {
+        const float alpha = 1.6732632423543772f;
+        const float scale = 1.0507009873554805f;
+        for (int i = 0; i < A->size; i++) {
+            if (A->Z[i] <= 0) {
+                float exp_z = safe_exp(A->Z[i]);
+                A->Z[i] = scale * alpha * (exp_z - 1.0f);
+                A->dZ[i] = scale * alpha * exp_z;
+            } 
+            else {
+                A->Z[i] *= scale;
+                A->dZ[i] = scale;
+            }
+        }
+        }
+        break;
+
+    case GELU:
+        for (int i = 0; i < A->size; i++) {
+            float x = A->Z[i];
+            A->Z[i] = gelu_approx(x);
+            // GELU derivative approximation
+            float tanh_arg = 0.7978845608f * (x + 0.044715f * x * x * x);
+            float tanh_val = tanhf(tanh_arg);
+            float sech_sq = 1.0f - tanh_val * tanh_val;
+            A->dZ[i] = 0.5f * (1.0f + tanh_val) + 0.5f * x * sech_sq * 0.7978845608f * (1.0f + 0.134145f * x * x);
+        }
+        break;
+
+    case Swish:
+        for (int i = 0; i < A->size; i++) {
+            float x = A->Z[i];
+            float sigmoid = 1.0f/(1.0f+safe_exp(-x));
+            A->Z[i] = x * sigmoid;
+            A->dZ[i] = sigmoid + x * sigmoid * (1.0f - sigmoid); // Swish derivative
+        }
+        break;
+
+    case Softmax:
+        {
+        int k = A->size;
+        float max = A->Z[0];
+        for (int i = 1; i < k; i++) {if (A->Z[i] > max) max = A->Z[i];} //find max
+        float expsum = 0.0f;
+        for (int i = 0; i < k; i++) {
+            A->Z[i] = safe_exp(A->Z[i] - max); // Use safe_exp for consistency
+            expsum += A->Z[i];
+        }
+        if (expsum == 0.0f) {
+            perror("Softmax error: expsum is zero");
+            exit(1);}
+        for (int i = 0; i < k; i++) A->Z[i] /= expsum;
+        }
+        break;
+        
+    default:
+        for (int i = 0; i < A->size; i++) A->dZ[i] = 1.0f; 
+        break;
     }
 }
 
-/// @brief One hot encodes the error function
+/// @brief Applies loss function to final layer
+/// @param A activation buffer
+/// @param func loss function
 /// @param k 
-/// @return float array with null except kth element as 1
-float* one_hot_encode(int k){
-    float* final = malloc(sizeof(float)*10);
-    for(int i = 0; i < 10; i++){
-        if(i == k){final[i] = (float)1;}
-        else{final[i] = (float)0;}
-    }
-    return final;
-}
+/// @return 
+float loss_function(activations*A, loss_func_t func, int k){
+    float loss = 0.0f;
+    switch (func){
+    case L1:{
+        for(int i = 0; i < A->size; i++){
+            if(i == k) A->dZ[i] = A->Z[i] - 1.0f;
+            else A->dZ[i] = A->Z[i];
+        }
+        loss = fabsf(A->dZ[k]);
+        }
+        break;
 
-/// @brief Loss function that tells us the error values
-/// @param final_layer 
-/// @param k size
-void loss_function(struct activation* dZ_loss,struct activation* Fl, int k) {
-    float* j = one_hot_encode(k);
-    if (j == NULL) {
-        printf("Failed to allocate memory for one-hot encoding\n");
-        exit(1);
-    }
-    for (int i = 0; i < Fl->size; i++) {
-        dZ_loss->activation[i] = Fl->activation[i] - j[i];
-    }
-    free(j);
-}
+    case L2:{
+        for(int i = 0; i < A->size; i++){
+            if(i == k) A->dZ[i] = A->Z[i] - 1.0f;
+            else A->dZ[i] = A->Z[i];
+            loss += A->dZ[i] * A->dZ[i];
+        }
+        loss *= 0.5f; // standard L2 scaling
+        }
+        break;
 
-/// @brief Computes the cross-entropy loss between predicted activation and the true label.
-/// @param Fl Predicted activation (output of the softmax layer).
-/// @param k True label (integer between 0 and 9).
-/// @return Cross-entropy loss value.
-float compute_loss(struct activation* Fl, int k) {
-    if (k < 0 || k >= Fl->size) {
-        perror("Invalid label index");
-        exit(1);
+    case CE:{ // assumes Z already softmaxed
+        for(int i = 0; i < A->size; i++){
+            A->dZ[i] = A->Z[i];
+        }
+        loss = -logf(A->Z[k] + 1e-9f); 
+        A->dZ[k] -= 1.0f; 
+        }
+        break;
+
+    case MSE:{
+        for(int i = 0; i < A->size; i++){
+            float y = (i == k) ? 1.0f : 0.0f;
+            A->dZ[i] = A->Z[i] - y;
+            loss += A->dZ[i] * A->dZ[i];
+        }
+        loss /= A->size;
+        }
+        break;
+
+    case MAE:{
+        for(int i = 0; i < A->size; i++){
+            float y = (i == k) ? 1.0f : 0.0f;
+            A->dZ[i] = A->Z[i] - y;
+            loss += fabsf(A->dZ[i]);
+        }
+        loss /= A->size;
+        }
+        break;
+
+    case HUBER:{
+        float delta = 1.0f;
+        for(int i = 0; i < A->size; i++){
+            float y = (i == k) ? 1.0f : 0.0f;
+            A->dZ[i] = A->Z[i] - y;
+            float abs_error = fabsf(A->dZ[i]);
+            if(abs_error < delta){
+                loss += 0.5f * abs_error * abs_error;
+            } else {
+                loss += delta * (abs_error - 0.5f * delta);
+            }
+        }
+        loss /= A->size;
+        }
+        break;
+
+    case BCE:{ // binary classification only, assumes A->size == 1
+        float y = (k == 1) ? 1.0f : 0.0f;
+        float z = A->Z[0];
+        A->dZ[0] = z - y;
+        loss = -(y * logf(z + 1e-9f) + (1.0f - y) * logf(1.0f - z + 1e-9f));
+        }
+        break;
+
+    case CCE:{ // multi-class categorical CE (one-hot target)
+        for(int i = 0; i < A->size; i++){
+            A->dZ[i] = A->Z[i];
+        }
+        loss = -logf(A->Z[k] + 1e-9f);
+        A->dZ[k] -= 1.0f;
+        }
+        break;
+
+    case SCE:{ // sparse categorical CE, same as CE for int labels
+        for(int i = 0; i < A->size; i++){
+            A->dZ[i] = A->Z[i];
+        }
+        loss = -logf(A->Z[k] + 1e-9f);
+        A->dZ[k] -= 1.0f;
+        }
+        break;
+
+    default:
+        break;
     }
-    
-    float predicted_prob = Fl->activation[k];      
-    if (predicted_prob <= 0.0f) {
-        predicted_prob = 1e-15; 
-    }
-    return -log(predicted_prob);
+    return loss;
 }
 
 /// @brief Calcualtes Gradient in activation given previous gradient.
@@ -251,7 +536,6 @@ float compute_loss(struct activation* Fl, int k) {
 /// @param L Weights and biases of the layer in front
 /// @param dZ_prev loss function of layer in front
 /// @param A_curr ReLU derivative of the current layer
-
 void calc_grad_activation(struct activation* dZ_curr,struct layer*L,struct activation* dZ_prev,struct activation*A_curr){
     if(dZ_curr->size != A_curr->size){perror("The ReLU deriv and n-1 grad activation matricies do not match");exit(1);}
     if(L->rows != dZ_prev->size){perror("The Layer matricies and gradient layer matricies do not match");exit(1);}

@@ -1,3 +1,6 @@
+#ifndef CONV2D_H
+#define CONV2D_H
+
 #include<stdio.h>
 #include<stdlib.h>
 #include<stdint.h>
@@ -31,3 +34,5 @@ void backprop_kernel(Image2D delKernel,Image2D Kernel, Image2D Unpooled, Image2D
 void kernel_update(Image2D delta_kernel, Image2D Kernel, float learning_rate);
 
 void zero_kernel(Image2D Kernel);
+
+#endif

@@ -2,7 +2,12 @@
 
 **CNNs-in-C** builds upon the "MNIST from scratch in C" project, adding significant performance improvements and support for convolutional neural networks. This version focuses on increasing training speed, improving data structures, and incorporating low-level optimizations such as SIMD vectorization and cache-friendly memory layouts.
 
+Refer to the Documentation in the Docs folder provided. All of the code for this project was written without the help of any AI except for the documentation for each function and some menial repetitive switch case statements. 
+
 ## Features
+
+### Custom .idx file parser
+  Wrote a custom .idx file parser for this network.
 
 ### Core Neural Network Enhancements
 
@@ -13,7 +18,7 @@
   Introduced a new structure for handling image data more efficiently, it now stores the metadata for Unpooling more efficiently.
 
 * **Optimized Weight Storage**
-  Changed layer weights from 2D arrays to flattened 1D arrays for:
+  Changed layer weights from 2D arrays in previous project to flattened 1D arrays for:
 
   * Improved cache performance
   * Simplified transpose operations

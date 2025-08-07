@@ -8,7 +8,7 @@
 #include<omp.h>
 
 #define BATCH_SIZE 32
-#define NUM_KERNELS 16
+#define NUM_KERNELS 5
 
 void print_ascii_art(Image2D img) {
     for (int i = 0; i < img.rows; i++) {
@@ -32,31 +32,18 @@ int main(){
     
     // Training parameters
     float batch_time = 0.0f;
-    int epoch = 10;
+    int epoch = 3;
     float learning_rate = 0.0001f;
     int size = pixel_data->size/BATCH_SIZE; 
     
     // layer sizes
     int lay1 = 121*NUM_KERNELS;
     int lay2 = 100;
-    int lay3 = 10;
-    
-    
+    int lay3 = 10;    
 
-    // Init Activation buffers
-    struct activation* AL1 = init_activation(lay1);
-    struct activation* AL2 = init_activation(lay2);
-    struct activation* AL3 = init_activation(lay3);
-
-    // init activation error buffers
-    struct activation* dZAL1 = init_activation(lay1);
-    struct activation* dZAL2 = init_activation(lay2);
-    struct activation* dZAL3 = init_activation(lay3);
-
-    // derivative buffers
-    struct activation* dZAL1_ReLU = init_activation(lay1);
-    struct activation* dZAL2_ReLU = init_activation(lay2);
-    
+    activations A1 = init_activations(lay1);
+    activations A2 = init_activations(lay2);
+    activations A3 = init_activations(lay3);   
     
     // Layer init
     struct layer* L1 = init_layer(lay2,lay1);
@@ -100,10 +87,8 @@ int main(){
                 }
                 
                 // Forward Propagation
-                StandardizeActivations(AL1);
                 ReLU(AL1); 
                 forward_prop_step(AL1, L1, AL2); 
-                StandardizeActivations(AL2);
                 ReLU(AL2); 
                 forward_prop_step(AL2, L2, AL3); 
                 softmax(AL3); 
@@ -122,8 +107,8 @@ int main(){
                     backprop_kernel(del_kernel[i],kernels[i],convimg[i],image);
                     kernel_update(del_kernel[i],sum_del_kernel[i],1);
                 }
-                param_update(sdL1,dL1,1);
-                param_update(sdL2,dL2,1);
+                param_update(sdL1,dL1,(float)1/BATCH_SIZE);
+                param_update(sdL2,dL2,(float)1/BATCH_SIZE);
                 
                 total_loss += compute_loss(AL3,lbl_arr[k])/BATCH_SIZE;
             }
@@ -166,10 +151,8 @@ int main(){
         }
 
         // Forward Propagation
-        StandardizeActivations(AL1);
         ReLU(AL1); // Relu image
         forward_prop_step(AL1, L1, AL2); // forward prop layer 1
-        StandardizeActivations(AL2);
         ReLU(AL2); // Relu hidden 1
         forward_prop_step(AL2, L2, AL3); // forward prop layer 2
         softmax(AL3); // Softmax output layer

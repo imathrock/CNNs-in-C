@@ -2,40 +2,61 @@
 #define NEURAL_NETWORK_H
 
 #include <stdio.h>
-#include <stdlib.h>
+#include <stdlib.h>=
 #include <stdint.h>
 #include <math.h>
 #include "dataloaders/idx-file-parser.h"
+
+typedef enum{
+    ReLU,
+    Sigmoid,
+    Tanh,
+    LeakyRelu,
+    PReLU,
+    ELU,
+    SELU,
+    GELU,
+    Swish,
+    Softmax
+} act_func_t;
+
+typedef enum {
+    L1,
+    L2,
+    CE,     
+    MSE,    
+    MAE,    
+    HUBER,  
+    BCE,    
+    CCE,    
+    SCE     
+} loss_func_t;
 
 // Structure containing pointers to Weights and biases of the layers.
 typedef struct layer {
     float* Weights;
     float* biases;
-    int rows;
-    int cols;
 } layer;
-
-// Simple float array that holds activation values of the layers.
-typedef struct activation {
-    float* activation;
-    int size;
-} activation;
 
 // bunched activations struct
 typedef struct{
-    activation*Z;
-    activation*del_Z;
-    activation*dZ;
+    int size;
+    float*Z;
+    float*dZ; // derivative
+    float*del_Z; // gradient
 }activations;
 
 typedef struct{
+    int init_type;
+    int rows;
+    int cols;
     layer*params;
     layer*param_grad;
     layer*param_grad_sum;
 }DenseLayer;
 
 // Initializes a layer struct with guards in place to prevent memory leak.
-struct layer* init_layer(int rows, int cols);
+layer* init_layer(int rows, int cols);
 
 // Frees the Layer struct.
 void free_layer(struct layer* Layer);
@@ -46,12 +67,6 @@ DenseLayer*init_DenseLayer(int rows,int cols);
 // DenseLayer finalizer
 void Free_DenseLayer(DenseLayer*DL);
 
-// Initializes and creates a float array to store the activation in.
-struct activation* init_activation(int size);
-
-// Frees the activation struct.
-void free_activation(struct activation* a);
-
 // activations init func
 activations*init_activations(int size);
 
@@ -61,20 +76,14 @@ void Free_activations(activations*A);
 // Efficient Forward prop function.
 void forward_prop_step(struct activation* A1, struct layer* L, struct activation* A2);
 
-// Applies ReLU to the activation.
-void ReLU(struct activation* A);
+/// @brief Applies enum act_func, simultaneously computes derivatives and stores it.
+/// @param A Activations struct
+/// @param func act func, default identity.
+void activation_function(activations*A,act_func_t func)
 
-// Takes Derivative of ReLU and puts it in the other activation struct.
-void ReLU_derivative(struct activation*A,struct activation*B);
 
-// Applies Softmax to the activation layer.
-void softmax(struct activation* A);
+float loss_function(activations*A, loss_func_t func, int k)
 
-// One hot encodes the error function.
-float* one_hot_encode(int k);
-
-// Loss function that tells us the error values.
-void loss_function(struct activation* dZ_loss,struct activation* Fl, int k);
 
 // Computes the cross-entropy loss between predicted activation and the true label.
 float compute_loss(struct activation* Fl, int k);
