@@ -2,7 +2,7 @@
 #define NEURAL_NETWORK_H
 
 #include <stdio.h>
-#include <stdlib.h>=
+#include <stdlib.h>
 #include <stdint.h>
 #include <math.h>
 #include "dataloaders/idx-file-parser.h"
@@ -21,8 +21,8 @@ typedef enum{
 } act_func_t;
 
 typedef enum {
-    L1,
-    L2,
+    L1loss,
+    L2loss,
     CE,     
     MSE,    
     MAE,    
@@ -33,7 +33,7 @@ typedef enum {
 } loss_func_t;
 
 // Structure containing pointers to Weights and biases of the layers.
-typedef struct layer {
+typedef struct {
     float* Weights;
     float* biases;
 } layer;
@@ -41,9 +41,9 @@ typedef struct layer {
 // bunched activations struct
 typedef struct{
     int size;
-    float*Z;
-    float*dZ; // derivative
-    float*del_Z; // gradient
+    float*Z;  // activation values
+    float*gprime; // activation derivative
+    float*dZ; // gradient
 }activations;
 
 typedef struct{
@@ -56,13 +56,13 @@ typedef struct{
 }DenseLayer;
 
 // Initializes a layer struct with guards in place to prevent memory leak.
-layer* init_layer(int rows, int cols);
+layer* init_layer(int rows, int cols,int init_type);
 
 // Frees the Layer struct.
-void free_layer(struct layer* Layer);
+void free_layer(layer* Layer);
 
 // Dense layer init func
-DenseLayer*init_DenseLayer(int rows,int cols);
+DenseLayer*init_DenseLayer(int rows,int cols,int init_type);
 
 // DenseLayer finalizer
 void Free_DenseLayer(DenseLayer*DL);
@@ -74,46 +74,41 @@ activations*init_activations(int size);
 void Free_activations(activations*A);
 
 // Efficient Forward prop function.
-void forward_prop_step(struct activation* A1, struct layer* L, struct activation* A2);
 
-/// @brief Applies enum act_func, simultaneously computes derivatives and stores it.
-/// @param A Activations struct
-/// @param func act func, default identity.
-void activation_function(activations*A,act_func_t func)
+void activation_function(activations*A,act_func_t func);
 
+float loss_function(activations*A, loss_func_t func, int k);
 
-float loss_function(activations*A, loss_func_t func, int k)
-
-
-// Computes the cross-entropy loss between predicted activation and the true label.
-float compute_loss(struct activation* Fl, int k);
+void forward_prop_step(activations*A1, DenseLayer*L,activations*A2);
 
 // Calculates Gradient in activation given previous gradient.
-void calc_grad_activation(struct activation* dZ_curr, struct layer* L, struct activation* dZ_prev, struct activation* A_curr);
+void calc_grad_activation(activations* A_curr,DenseLayer*L,activations* A_prev);
 
 // Conducts 1 step of back propagation and also updates parameters immediately.
-void back_propogate_step(struct layer* L, struct layer* dL, struct activation* dZ, struct activation* A);
+void back_propogate_step(activations*A1,DenseLayer*L,activations* A2);
 
 // Given original weights, biases and gradient, updates all the values accordingly.
-void param_update(struct layer* L, struct layer* dL, float Learning_Rate);
+void update_weights(DenseLayer*L, float LR);
+
+void zero_grad(DenseLayer*L);
 
 // Clears the Given layer.
-void Zero_Layer(struct layer* L);
+// void Zero_Layer(layer* L);
 
 // Inputs image data into activation struct.
-void input_data(struct pixel_data* pixel_data, int k, struct activation* A);
+// void input_data(struct pixel_data* pixel_data, int k, struct activation* A);
 
 // Gets the largest activation value and returns it.
-int get_pred_from_softmax(struct activation* A);
+int get_pred_from_softmax(activations *A);
 
 // test StandardizeActivations
-void StandardizeActivations(activation *A);
+void StandardizeActivations(activations *A);
 
 // Prints out activation values for debugging.
-void print_activation(struct activation* A);
+// void print_activation(struct activation* A);
 
 // Prints the contents of a layer struct.
-void print_layer(const struct layer* l);
+// void print_layer(const struct layer* l);
 
 // Shows the image at kth index.
 void show_image(struct pixel_data* pixel_data, int k);

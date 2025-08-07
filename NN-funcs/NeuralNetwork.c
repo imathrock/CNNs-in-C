@@ -2,12 +2,13 @@
 #include<stdlib.h>
 #include<stdint.h>
 #include<math.h>
+
 #include"NeuralNetwork.h"
 
 #include <immintrin.h> // Header for AVX intrinsics
 
 
-#define L_WEIGHT(L, i, j)  (L->Weights[((i) * (L)->cols) + (j)])
+#define L_WEIGHT(L, i, j, cols)  (L->Weights[((i) * cols) + (j)])
 
 /// @brief Box Muller transform, computes random number on mean=0 and var=1 spectrum. Generates 2 numbers, returns spare on second call.
 /// @return random number
@@ -34,8 +35,8 @@ float randn() {
 /// @param rows number of rows in both bias and weight matrix.
 /// @param cols number of columns in weight matrix.
 /// @param init_type initialization type (see documentation for options)
-layer* init_layer(int rows, int cols, int init_type) {
-    struct layer* Layer = (struct layer*)malloc(sizeof(struct layer));
+layer* init_layer(int rows, int cols, int init_type){
+    layer* Layer = (layer*)malloc(sizeof(layer));
     if (Layer == NULL) {
         perror("Failed to allocate memory for Layer");
         return NULL;
@@ -200,7 +201,7 @@ DenseLayer*init_DenseLayer(int rows,int cols,int init_type){
 
 /// @brief Frees the Layer struct.
 /// @param Layer 
-void free_layer(struct layer*Layer){
+void free_layer(layer*Layer){
     if (Layer == NULL) {return;}
     if (Layer->biases != NULL) {
         free(Layer->biases);
@@ -230,7 +231,7 @@ activations*init_activations(int size){
     activations*act = malloc(sizeof(activations));
     act->size = size;
     act->Z = calloc(size,sizeof(float));
-    act->del_Z = calloc(size,sizeof(float));
+    act->gprime = calloc(size,sizeof(float));
     act->dZ = calloc(size,sizeof(float));
     return act;
 }
@@ -238,51 +239,10 @@ activations*init_activations(int size){
 /// @brief finalizer for activations
 /// @param A 
 void Free_activations(activations*A){
-    free_activation(A->Z);
-    free_activation(A->del_Z);
-    free_activation(A->dZ);
+    free(A->Z);
+    free(A->gprime);
+    free(A->dZ);
     free(A);
-}
-
-/// @brief Efficient Forward prop function, Does both 
-/// @param A1 Previous activation
-/// @param L Layer with weights and biases
-/// @param A2 Next activation
-void forward_prop_step(struct activation*A1,struct layer*L,struct activation*A2){ 
-    if(A1->size != L->cols){perror("A1's size and L's weight's cols do not match"); exit(1);}
-    if(A2->size != L->rows){perror("A2's size and L's weight's rows do not match"); exit(1);}
-    memcpy(A2->activation,L->biases,sizeof(float)*A2->size);
-    // vectorize the multiplications, then vector add the summations.
-    //multiplication vectorization
-    float buf[A2->size];
-    memset(buf, 0, sizeof(buf));  
-    for(int i = 0; i < L->rows; i++){
-        __m256 sum_vec = _mm256_setzero_ps();
-        int j;
-        for(j = 0; j+7<L->cols; j+=8){
-            __m256 weightvec = _mm256_loadu_ps(&L_WEIGHT(L,i,j));
-            __m256 act_vec = _mm256_loadu_ps(&A1->activation[j]);
-            __m256 mulvec = _mm256_mul_ps(weightvec,act_vec);
-            sum_vec = _mm256_add_ps(mulvec,sum_vec);
-        }
-        __m128 bottom = _mm256_castps256_ps128(sum_vec);
-        __m128 top = _mm256_extractf128_ps(sum_vec,1);
-        bottom = _mm_add_ps(top,bottom);
-        bottom = _mm_hadd_ps(bottom,bottom);
-        bottom = _mm_hadd_ps(bottom,bottom);
-        buf[i] = _mm_cvtss_f32(bottom);
-        for(; j < L->cols; j++){ buf[i] += L_WEIGHT(L,i,j)*A1->activation[j]; }
-    }
-    int i = 0;
-    for(; i+7 < L->rows; i+=8){
-        __m256 buf_vec = _mm256_loadu_ps(&buf[i]);
-        __m256 act_vec = _mm256_loadu_ps(&A2->activation[i]);
-        act_vec = _mm256_add_ps(buf_vec,act_vec);
-        _mm256_storeu_ps(&A2->activation[i],act_vec);
-    }
-    for (; i < L->rows; i++){
-        A2->activation[i] += buf[i];
-    }   
 }
 
 /// @brief inline function that prevents overflow in exp
@@ -307,22 +267,22 @@ void activation_function(activations*A,act_func_t func){
     case ReLU:
         for (int i = 0; i < A->size; i++){
             if(A->Z[i] <= 0){
-                A->Z[i] = 0; A->dZ[i] = 0;}
-            else{ A->dZ[i] = 1;}
+                A->Z[i] = 0; A->gprime[i] = 0;}
+            else{ A->gprime[i] = 1;}
         }
         break;
 
     case Sigmoid:
         for(int i = 0; i < A->size; i++){
             A->Z[i] = 1.0f/(1.0f+safe_exp(-A->Z[i])); // Fixed: should be -A->Z[i]
-            A->dZ[i] = A->Z[i] * (1.0f-A->Z[i]);
+            A->gprime[i] = A->Z[i] * (1.0f-A->Z[i]);
         }
         break;
 
     case Tanh:
         for(int i = 0; i < A->size; i++){
             A->Z[i] = tanhf(A->Z[i]);
-            A->dZ[i] = 1.0f - A->Z[i] * A->Z[i]; // Avoid powf, use multiplication
+            A->gprime[i] = 1.0f - A->Z[i] * A->Z[i]; // Avoid powf, use multiplication
         }        
         break;
 
@@ -332,9 +292,9 @@ void activation_function(activations*A,act_func_t func){
         for (int i = 0; i < A->size; i++) {
             if (A->Z[i] <= 0) {
                 A->Z[i] *= alpha;
-                A->dZ[i] = alpha;
+                A->gprime[i] = alpha;
             } 
-            else {A->dZ[i] = 1.0f;}
+            else {A->gprime[i] = 1.0f;}
         }
         }
         break;
@@ -345,9 +305,9 @@ void activation_function(activations*A,act_func_t func){
         for (int i = 0; i < A->size; i++) {
             if (A->Z[i] <= 0) {
                 A->Z[i] *= alpha;
-                A->dZ[i] = alpha;
+                A->gprime[i] = alpha;
             } 
-            else {A->dZ[i] = 1.0f;}
+            else {A->gprime[i] = 1.0f;}
         }
         }
         break;
@@ -358,9 +318,9 @@ void activation_function(activations*A,act_func_t func){
         for (int i = 0; i < A->size; i++) {
             if (A->Z[i] <= 0) {
                 A->Z[i] = alpha * (safe_exp(A->Z[i]) - 1.0f);
-                A->dZ[i] = A->Z[i] + alpha; // ELU derivative: f(x) + alpha when x <= 0
+                A->gprime[i] = A->Z[i] + alpha; // ELU derivative: f(x) + alpha when x <= 0
             } 
-            else {A->dZ[i] = 1.0f;}
+            else {A->gprime[i] = 1.0f;}
         }
         }
         break;
@@ -373,11 +333,11 @@ void activation_function(activations*A,act_func_t func){
             if (A->Z[i] <= 0) {
                 float exp_z = safe_exp(A->Z[i]);
                 A->Z[i] = scale * alpha * (exp_z - 1.0f);
-                A->dZ[i] = scale * alpha * exp_z;
+                A->gprime[i] = scale * alpha * exp_z;
             } 
             else {
                 A->Z[i] *= scale;
-                A->dZ[i] = scale;
+                A->gprime[i] = scale;
             }
         }
         }
@@ -391,7 +351,7 @@ void activation_function(activations*A,act_func_t func){
             float tanh_arg = 0.7978845608f * (x + 0.044715f * x * x * x);
             float tanh_val = tanhf(tanh_arg);
             float sech_sq = 1.0f - tanh_val * tanh_val;
-            A->dZ[i] = 0.5f * (1.0f + tanh_val) + 0.5f * x * sech_sq * 0.7978845608f * (1.0f + 0.134145f * x * x);
+            A->gprime[i] = 0.5f * (1.0f + tanh_val) + 0.5f * x * sech_sq * 0.7978845608f * (1.0f + 0.134145f * x * x);
         }
         break;
 
@@ -400,7 +360,7 @@ void activation_function(activations*A,act_func_t func){
             float x = A->Z[i];
             float sigmoid = 1.0f/(1.0f+safe_exp(-x));
             A->Z[i] = x * sigmoid;
-            A->dZ[i] = sigmoid + x * sigmoid * (1.0f - sigmoid); // Swish derivative
+            A->gprime[i] = sigmoid + x * sigmoid * (1.0f - sigmoid); // Swish derivative
         }
         break;
 
@@ -422,7 +382,7 @@ void activation_function(activations*A,act_func_t func){
         break;
         
     default:
-        for (int i = 0; i < A->size; i++) A->dZ[i] = 1.0f; 
+        for (int i = 0; i < A->size; i++) A->gprime[i] = 1.0f; 
         break;
     }
 }
@@ -435,20 +395,20 @@ void activation_function(activations*A,act_func_t func){
 float loss_function(activations*A, loss_func_t func, int k){
     float loss = 0.0f;
     switch (func){
-    case L1:{
+    case L1loss:{
         for(int i = 0; i < A->size; i++){
-            if(i == k) A->dZ[i] = A->Z[i] - 1.0f;
-            else A->dZ[i] = A->Z[i];
+            if(i == k) A->gprime[i] = A->Z[i] - 1.0f;
+            else A->gprime[i] = A->Z[i];
         }
-        loss = fabsf(A->dZ[k]);
+        loss = fabsf(A->gprime[k]);
         }
         break;
 
-    case L2:{
+    case L2loss:{
         for(int i = 0; i < A->size; i++){
-            if(i == k) A->dZ[i] = A->Z[i] - 1.0f;
-            else A->dZ[i] = A->Z[i];
-            loss += A->dZ[i] * A->dZ[i];
+            if(i == k) A->gprime[i] = A->Z[i] - 1.0f;
+            else A->gprime[i] = A->Z[i];
+            loss += A->gprime[i] * A->gprime[i];
         }
         loss *= 0.5f; // standard L2 scaling
         }
@@ -456,18 +416,18 @@ float loss_function(activations*A, loss_func_t func, int k){
 
     case CE:{ // assumes Z already softmaxed
         for(int i = 0; i < A->size; i++){
-            A->dZ[i] = A->Z[i];
+            A->gprime[i] = A->Z[i];
         }
         loss = -logf(A->Z[k] + 1e-9f); 
-        A->dZ[k] -= 1.0f; 
+        A->gprime[k] -= 1.0f; 
         }
         break;
 
     case MSE:{
         for(int i = 0; i < A->size; i++){
             float y = (i == k) ? 1.0f : 0.0f;
-            A->dZ[i] = A->Z[i] - y;
-            loss += A->dZ[i] * A->dZ[i];
+            A->gprime[i] = A->Z[i] - y;
+            loss += A->gprime[i] * A->gprime[i];
         }
         loss /= A->size;
         }
@@ -476,8 +436,8 @@ float loss_function(activations*A, loss_func_t func, int k){
     case MAE:{
         for(int i = 0; i < A->size; i++){
             float y = (i == k) ? 1.0f : 0.0f;
-            A->dZ[i] = A->Z[i] - y;
-            loss += fabsf(A->dZ[i]);
+            A->gprime[i] = A->Z[i] - y;
+            loss += fabsf(A->gprime[i]);
         }
         loss /= A->size;
         }
@@ -487,8 +447,8 @@ float loss_function(activations*A, loss_func_t func, int k){
         float delta = 1.0f;
         for(int i = 0; i < A->size; i++){
             float y = (i == k) ? 1.0f : 0.0f;
-            A->dZ[i] = A->Z[i] - y;
-            float abs_error = fabsf(A->dZ[i]);
+            A->gprime[i] = A->Z[i] - y;
+            float abs_error = fabsf(A->gprime[i]);
             if(abs_error < delta){
                 loss += 0.5f * abs_error * abs_error;
             } else {
@@ -502,26 +462,26 @@ float loss_function(activations*A, loss_func_t func, int k){
     case BCE:{ // binary classification only, assumes A->size == 1
         float y = (k == 1) ? 1.0f : 0.0f;
         float z = A->Z[0];
-        A->dZ[0] = z - y;
+        A->gprime[0] = z - y;
         loss = -(y * logf(z + 1e-9f) + (1.0f - y) * logf(1.0f - z + 1e-9f));
         }
         break;
 
     case CCE:{ // multi-class categorical CE (one-hot target)
         for(int i = 0; i < A->size; i++){
-            A->dZ[i] = A->Z[i];
+            A->gprime[i] = A->Z[i];
         }
         loss = -logf(A->Z[k] + 1e-9f);
-        A->dZ[k] -= 1.0f;
+        A->gprime[k] -= 1.0f;
         }
         break;
 
     case SCE:{ // sparse categorical CE, same as CE for int labels
         for(int i = 0; i < A->size; i++){
-            A->dZ[i] = A->Z[i];
+            A->gprime[i] = A->Z[i];
         }
         loss = -logf(A->Z[k] + 1e-9f);
-        A->dZ[k] -= 1.0f;
+        A->gprime[k] -= 1.0f;
         }
         break;
 
@@ -531,22 +491,46 @@ float loss_function(activations*A, loss_func_t func, int k){
     return loss;
 }
 
+/// @brief Efficient Forward prop function with AVX2 intrinsics.
+/// @param A1 Previous activation
+/// @param L Layer with weights and biases
+/// @param A2 Next activation
+void forward_prop_step(activations*A1, DenseLayer*L,activations*A2){ 
+    if(A1->size != L->cols){perror("A1's size and L's weight's cols do not match"); exit(1);}
+    if(A2->size != L->rows){perror("A2's size and L's weight's rows do not match"); exit(1);}
+    memcpy(A2->Z,L->params->biases,sizeof(float)*A2->size);
+    for(int i = 0; i < L->rows; i++){
+        __m256 sum_vec = _mm256_setzero_ps();
+        int j;
+        for(j = 0; j+7<L->cols; j+=8){
+            __m256 weightvec = _mm256_loadu_ps(&L_WEIGHT(L->params,i,j,L->cols));
+            __m256 act_vec = _mm256_loadu_ps(&A1->Z[j]);
+            sum_vec = _mm256_fmadd_ps(weightvec,act_vec,sum_vec);
+        }
+        __m128 bottom = _mm256_castps256_ps128(sum_vec);
+        __m128 top = _mm256_extractf128_ps(sum_vec,1);
+        bottom = _mm_add_ps(top,bottom);
+        bottom = _mm_hadd_ps(bottom,bottom);
+        bottom = _mm_hadd_ps(bottom,bottom);
+        float dot = _mm_cvtss_f32(bottom);
+        for(; j < L->cols; j++){ dot += L_WEIGHT(L->params,i,j,L->cols)*A1->Z[j]; }
+        A2->Z[i] += dot;
+    }
+}
+
 /// @brief Calcualtes Gradient in activation given previous gradient.
-/// @param dZ_curr The gradient to be calculated
+/// @param A1 The gradient to be calculated
 /// @param L Weights and biases of the layer in front
-/// @param dZ_prev loss function of layer in front
-/// @param A_curr ReLU derivative of the current layer
-void calc_grad_activation(struct activation* dZ_curr,struct layer*L,struct activation* dZ_prev,struct activation*A_curr){
-    if(dZ_curr->size != A_curr->size){perror("The ReLU deriv and n-1 grad activation matricies do not match");exit(1);}
-    if(L->rows != dZ_prev->size){perror("The Layer matricies and gradient layer matricies do not match");exit(1);}
-    if(L->cols != dZ_curr->size){perror("The Layer matricies and curr_grad layer matricies do not match");exit(1);}
-    // memcpy(dZ_curr->activation,A_curr->activation,sizeof(float)*dZ_curr->size);
+/// @param dZ_prev loss function 
+void calc_grad_activation(activations* A1,DenseLayer*L,activations* A2){
+    if(L->rows != A2->size){perror("The Layer matricies and gradient layer matricies do not match");exit(1);}
+    if(L->cols != A1->size){perror("The Layer matricies and curr_grad layer matricies do not match");exit(1);}
     for (int i = 0; i < L->cols; i++) {
         float sum = 0.0f;
         for (int j = 0; j < L->rows; j++) {
-            sum += L_WEIGHT(L, j, i) * dZ_prev->activation[j]; 
+            sum += L_WEIGHT(L->params, j, i,L->cols) * A2->gprime[j]; 
         }
-        dZ_curr->activation[i] = sum * A_curr->activation[i];
+        A1->dZ[i] = sum * A1->gprime[i];
     }
 }
 
@@ -554,90 +538,83 @@ void calc_grad_activation(struct activation* dZ_curr,struct layer*L,struct activ
 /// @brief Conducts 1 step of back propogation
 /// @param L Layer's weights and biases
 /// @param dL Gradient layer
-/// @param dZ Loss function or activation gradient
+/// @param dZ activation gradient
 /// @param A n-1th layer
-
-void back_propogate_step(struct layer*L,struct layer*dL,struct activation* dZ,struct activation* A){
-    if(dL->rows != L->rows || dL->cols != L->cols){perror("The Gradient and Layer matrices do not match");exit(1);}
-    if(dZ->size != dL->rows){perror("Gradient activation and gradient layer matricies do not match");exit(1);}
-    if(A->size != dL->cols){perror("activation and GradientLayer matrices do not match");exit(1);}
-    memcpy(dL->biases,dZ->activation,sizeof(float)*dZ->size);
-    for (int i = 0; i < dL->rows; i++){
-        __m256 dZ_vec = _mm256_set1_ps(dZ->activation[i]);
+void back_propogate_step(activations*A1,DenseLayer*L,activations* A2){
+    if(A2->size != L->rows){perror("Gradient activation and gradient layer matricies do not match");exit(1);}
+    if(A1->size != L->cols){perror("activation and GradientLayer matrices do not match");exit(1);}
+    memcpy(L->param_grad->biases,A2->dZ,sizeof(float)*A2->size);
+    for (int i = 0; i < L->rows; i++){
+        __m256 dZ_vec = _mm256_set1_ps(A2->dZ[i]);
         int j;
-        for (j = 0; j+7 < dL->cols; j+=8){
-            __m256 A_vec = _mm256_loadu_ps(&A->activation[j]);
+        for (j = 0; j+7 < L->cols; j+=8){
+            __m256 A_vec = _mm256_loadu_ps(&A1->Z[j]);
             __m256 weight_vec = _mm256_mul_ps(dZ_vec,A_vec);
-            _mm256_storeu_ps(&L_WEIGHT(dL,i,j),weight_vec);
+            _mm256_storeu_ps(&L_WEIGHT(L->param_grad,i,j,L->cols),weight_vec);
         }
-        for (; j<dL->cols; j++) L_WEIGHT(dL,i,j) = dZ->activation[i]*A->activation[j];
+        for (; j<L->cols; j++) L_WEIGHT(L->param_grad,i,j,L->cols) = A2->dZ[i]*A1->Z[j];
     }
 }
 
 /// @brief Given original weights, biases and gradient, updates all the values accordingly
-/// @param L Layer
-/// @param dL Gradient
-
-void param_update(struct layer*L,struct layer*dL, float LR){
-    if(dL->rows != L->rows || dL->cols != L->cols){perror("The Gradient and Layer matrices do not match");exit(1);}
+/// @param DenseLayer
+/// @param LR learning rate
+void update_weights(DenseLayer*L, float LR){
     __m256 LR_vec = _mm256_set1_ps(LR);
     int i = 0;
     for(; i+7 < L->rows; i+=8){
-        __m256 v_bias = _mm256_loadu_ps(&L->biases[i]);
-        __m256 v_dbias = _mm256_loadu_ps(&dL->biases[i]);
+        __m256 v_bias = _mm256_loadu_ps(&L->param_grad->biases[i]);
+        __m256 v_dbias = _mm256_loadu_ps(&L->param_grad_sum->biases[i]);
         __m256 mulvec = _mm256_mul_ps(LR_vec,v_dbias);
         v_bias = _mm256_sub_ps(v_bias,mulvec);
-        _mm256_storeu_ps(&L->biases[i],v_bias);
+        _mm256_storeu_ps(&L->param_grad->biases[i],v_bias);
     }
     for (; i < L->rows; i++) {
-        L->biases[i] -= LR * dL->biases[i];
+        L->params->biases[i] -= LR * L->param_grad_sum->biases[i];
     }
-    for (int i = 0; i < dL->rows; i++){
+    for (int i = 0; i < L->rows; i++){
         int j = 0;
-        for (; j+7 < dL->cols; j+=8){
-            __m256 v_w = _mm256_loadu_ps(&L_WEIGHT(L,i,j));
-            __m256 vdW = _mm256_loadu_ps(&L_WEIGHT(dL,i,j));
+        for (; j+7 < L->cols; j+=8){
+            __m256 v_w = _mm256_loadu_ps(&L_WEIGHT(L->params,i,j,L->cols));
+            __m256 vdW = _mm256_loadu_ps(&L_WEIGHT(L->param_grad_sum,i,j,L->cols));
             __m256 mulvec = _mm256_mul_ps(LR_vec,vdW);
             v_w = _mm256_sub_ps(v_w,mulvec);
-            _mm256_storeu_ps(&L_WEIGHT(L,i,j),v_w);
+            _mm256_storeu_ps(&L_WEIGHT(L->params,i,j,L->cols),v_w);
         }
         for (; j < L->cols; j++) {
-             L_WEIGHT(L,i,j) += LR*L_WEIGHT(dL,i,j);
+             L_WEIGHT(L->params,i,j,L->cols) += LR*L_WEIGHT(L->params,i,j,L->cols);
         }
     }
-    
 }
 
-/// @brief Clears the Given layer
-/// @param L Layer
-void Zero_Layer(struct layer*L){
-    if(L->biases) memset(L->biases,0.0f,L->rows*sizeof(float)); //memset to 0;
-    if(L->Weights) memset(L->Weights,0.0f,L->rows*L->cols*sizeof(float));
+/// @brief Zeroes out gradients
+/// @param L 
+void zero_grad(DenseLayer*L){
+    memset(L->param_grad->biases,0.0f,L->rows*sizeof(float));
+    memset(L->param_grad->Weights,0.0f,L->rows*L->cols*sizeof(float));
+    memset(L->param_grad_sum->biases,0.0f,L->rows*sizeof(float));
+    memset(L->param_grad_sum->Weights,0.0f,L->rows*L->cols*sizeof(float));
 }
-
-
 
 /// @brief Inputs image data into activation struct
 /// @param pixel_data 
 /// @param k index of image
 /// @param A 
-void input_data(struct pixel_data* pixel_data,int k,struct activation*A){
+void input_data(struct pixel_data* pixel_data,int k,activations*A){
     int numpx = pixel_data->rows*pixel_data->cols;
     if (A->size != numpx){perror("Wrong layer passed to input");exit(1);}
-    for (int i = 0; i < numpx; i++){
-        A->activation[i] = pixel_data->neuron_activation[k][i]/255.0;
-    }
+    memcpy(A->Z,pixel_data->neuron_activation[k],sizeof(float)*numpx);
 }
 
 /// @brief Gets the largest activation value and returns it
 /// @param A 
 /// @return index of highest activation
-int get_pred_from_softmax(struct activation *A) {
+int get_pred_from_softmax(activations *A) {
     int max_index = 0;
-    float max_value = A->activation[0];
+    float max_value = A->Z[0];
     for (int i = 1; i < A->size; i++) {
-        if (A->activation[i] > max_value) {
-            max_value = A->activation[i];
+        if (A->Z[i] > max_value) {
+            max_value = A->Z[i];
             max_index = i;}
     }
     return max_index;
@@ -645,12 +622,12 @@ int get_pred_from_softmax(struct activation *A) {
 
 /// @brief Standardizes the activations
 /// @param A 
-void StandardizeActivations(activation *A){
+void StandardizeActivations(activations *A){
     float sum = 0.0f;
     __m256 sumvec = _mm256_setzero_ps();
     int i;
     for (i = 0; i+7 < A->size; i+=8){
-        __m256 actvec = _mm256_loadu_ps(&A->activation[i]);
+        __m256 actvec = _mm256_loadu_ps(&A->Z[i]);
         sumvec = _mm256_add_ps(sumvec,actvec);
     }
     __m128 bottom = _mm256_castps256_ps128(sumvec);
@@ -659,14 +636,14 @@ void StandardizeActivations(activation *A){
     bottom = _mm_hadd_ps(bottom,bottom);
     bottom = _mm_hadd_ps(bottom,bottom);
     sum = _mm_cvtss_f32(bottom);
-    for (; i < A->size; i++) sum += A->activation[i];
+    for (; i < A->size; i++) sum += A->Z[i];
     float mean = sum/A->size;
     float var = 0.0f;
     __m256 meanvec = _mm256_set1_ps(mean);
     __m256 varvec = _mm256_setzero_ps();
     i = 0;
     for(; i+7 < A->size; i+=8){
-        __m256 actvec = _mm256_loadu_ps(&A->activation[i]);
+        __m256 actvec = _mm256_loadu_ps(&A->Z[i]);
         varvec = _mm256_sub_ps(actvec,meanvec);
         varvec = _mm256_mul_ps(varvec,varvec);
     }
@@ -676,45 +653,45 @@ void StandardizeActivations(activation *A){
     bottom = _mm_hadd_ps(bottom,bottom);
     bottom = _mm_hadd_ps(bottom,bottom);
     var = _mm_cvtss_f32(bottom);
-    for(; i < A->size; i++) var += pow(A->activation[i]-mean,2);
+    for(; i < A->size; i++) var += pow(A->Z[i]-mean,2);
     var /= A->size;
     var = sqrt(var) + 0.00000001;
     varvec = _mm256_set1_ps(var);
     i = 0;
     for(; i+7 < A->size; i+=8){
-        __m256 actvec = _mm256_loadu_ps(&A->activation[i]);
+        __m256 actvec = _mm256_loadu_ps(&A->Z[i]);
         actvec = _mm256_sub_ps(actvec, meanvec);
         actvec = _mm256_div_ps(actvec,varvec);
-        _mm256_storeu_ps(&A->activation[i],actvec);
+        _mm256_storeu_ps(&A->Z[i],actvec);
     }
-    for(;i < A->size; i++) A->activation[i] /= var;
+    for(;i < A->size; i++) A->Z[i] /= var;
 }
 
-/// @brief Prints out activation values for debugging
-/// @param A 
-void print_activation(struct activation*A){
-    for(int i = 0; i < A->size; i++){printf("%f\n",A->activation[i]);}    
-}
+// /// @brief Prints out activation values for debugging
+// /// @param A 
+// void print_activation(struct activation*A){
+//     for(int i = 0; i < A->size; i++){printf("%f\n",A->activation[i]);}    
+// }
 
-/// @brief Prints the contents of a layer struct.
-/// @param l Pointer to the layer struct to be printed.
-void print_layer(const struct layer* l) {
-    if (l == NULL) {
-        printf("Layer is NULL.\n");
-        return;
-    }
-    printf("Layer dimensions: rows = %d, cols = %d\n", l->rows, l->cols);
-    printf("Weights:\n");
-    for (int i = 0; i < l->rows; i++) {
-        for (int j = 0; j < l->cols; j++) {
-            printf("%8.4f ", L_WEIGHT(l,i,j)); // Format weights for readability
-        }
-        printf("\n");
-    }
-    printf("Biases:\n");
-    for (int i = 0; i < l->rows; i++) {
-        printf("%8.4f ", l->biases[i]); // Format biases for readability
-    }
-    printf("\n");
-}
+// /// @brief Prints the contents of a layer struct.
+// /// @param l Pointer to the layer struct to be printed.
+// void print_layer(const struct layer* l) {
+//     if (l == NULL) {
+//         printf("Layer is NULL.\n");
+//         return;
+//     }
+//     printf("Layer dimensions: rows = %d, cols = %d\n", l->rows, l->cols);
+//     printf("Weights:\n");
+//     for (int i = 0; i < l->rows; i++) {
+//         for (int j = 0; j < l->cols; j++) {
+//             printf("%8.4f ", L_WEIGHT(l,i,j)); // Format weights for readability
+//         }
+//         printf("\n");
+//     }
+//     printf("Biases:\n");
+//     for (int i = 0; i < l->rows; i++) {
+//         printf("%8.4f ", l->biases[i]); // Format biases for readability
+//     }
+//     printf("\n");
+// }
 
