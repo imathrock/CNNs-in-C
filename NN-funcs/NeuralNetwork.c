@@ -399,6 +399,7 @@ float loss_function(activations*A, loss_func_t func, int k){
         for(int i = 0; i < A->size; i++){
             if(i == k) A->gprime[i] = A->Z[i] - 1.0f;
             else A->gprime[i] = A->Z[i];
+            A->dZ[i] = A->gprime[i]; // Set dZ for backprop
         }
         loss = fabsf(A->gprime[k]);
         }
@@ -408,6 +409,7 @@ float loss_function(activations*A, loss_func_t func, int k){
         for(int i = 0; i < A->size; i++){
             if(i == k) A->gprime[i] = A->Z[i] - 1.0f;
             else A->gprime[i] = A->Z[i];
+            A->dZ[i] = A->gprime[i]; // Set dZ for backprop
             loss += A->gprime[i] * A->gprime[i];
         }
         loss *= 0.5f; // standard L2 scaling
@@ -417,9 +419,11 @@ float loss_function(activations*A, loss_func_t func, int k){
     case CE:{ // assumes Z already softmaxed
         for(int i = 0; i < A->size; i++){
             A->gprime[i] = A->Z[i];
+            A->dZ[i] = A->gprime[i]; // For softmax+CE, dZ = y_hat - y
         }
-        loss = -logf(A->Z[k] + 1e-9f); 
-        A->gprime[k] -= 1.0f; 
+        loss = -logf(A->Z[k] + 1e-9f);
+        A->gprime[k] -= 1.0f;
+        A->dZ[k] -= 1.0f;
         }
         break;
 
@@ -427,6 +431,7 @@ float loss_function(activations*A, loss_func_t func, int k){
         for(int i = 0; i < A->size; i++){
             float y = (i == k) ? 1.0f : 0.0f;
             A->gprime[i] = A->Z[i] - y;
+            A->dZ[i] = A->gprime[i];
             loss += A->gprime[i] * A->gprime[i];
         }
         loss /= A->size;
@@ -437,6 +442,7 @@ float loss_function(activations*A, loss_func_t func, int k){
         for(int i = 0; i < A->size; i++){
             float y = (i == k) ? 1.0f : 0.0f;
             A->gprime[i] = A->Z[i] - y;
+            A->dZ[i] = A->gprime[i];
             loss += fabsf(A->gprime[i]);
         }
         loss /= A->size;
@@ -448,6 +454,7 @@ float loss_function(activations*A, loss_func_t func, int k){
         for(int i = 0; i < A->size; i++){
             float y = (i == k) ? 1.0f : 0.0f;
             A->gprime[i] = A->Z[i] - y;
+            A->dZ[i] = A->gprime[i];
             float abs_error = fabsf(A->gprime[i]);
             if(abs_error < delta){
                 loss += 0.5f * abs_error * abs_error;
@@ -463,6 +470,7 @@ float loss_function(activations*A, loss_func_t func, int k){
         float y = (k == 1) ? 1.0f : 0.0f;
         float z = A->Z[0];
         A->gprime[0] = z - y;
+        A->dZ[0] = A->gprime[0];
         loss = -(y * logf(z + 1e-9f) + (1.0f - y) * logf(1.0f - z + 1e-9f));
         }
         break;
@@ -470,18 +478,22 @@ float loss_function(activations*A, loss_func_t func, int k){
     case CCE:{ // multi-class categorical CE (one-hot target)
         for(int i = 0; i < A->size; i++){
             A->gprime[i] = A->Z[i];
+            A->dZ[i] = A->gprime[i];
         }
         loss = -logf(A->Z[k] + 1e-9f);
         A->gprime[k] -= 1.0f;
+        A->dZ[k] -= 1.0f;
         }
         break;
 
     case SCE:{ // sparse categorical CE, same as CE for int labels
         for(int i = 0; i < A->size; i++){
             A->gprime[i] = A->Z[i];
+            A->dZ[i] = A->gprime[i];
         }
         loss = -logf(A->Z[k] + 1e-9f);
         A->gprime[k] -= 1.0f;
+        A->dZ[k] -= 1.0f;
         }
         break;
 
@@ -528,7 +540,8 @@ void calc_grad_activation(activations* A1,DenseLayer*L,activations* A2){
     for (int i = 0; i < L->cols; i++) {
         float sum = 0.0f;
         for (int j = 0; j < L->rows; j++) {
-            sum += L_WEIGHT(L->params, j, i,L->cols) * A2->gprime[j]; 
+            // Propagate using next layer's dZ, not gprime
+            sum += L_WEIGHT(L->params, j, i,L->cols) * A2->dZ[j]; 
         }
         A1->dZ[i] = sum * A1->gprime[i];
     }

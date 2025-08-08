@@ -19,11 +19,15 @@ Image2D CreateImage(int rows, int cols);
 
 Image2D CreateKernel(int rows, int cols);
 
+Image2D CreateConvImg(Image2D img, Image2D kernel);
+
+Image2D CreatePoolImg(Image2D img, int ker_size, int stride);
+
 void ImageReLU(Image2D image);
 
-Image2D Conv2D(Image2D Kernel, Image2D image);
+void Conv2D(Image2D Kernel, Image2D image, Image2D convimg);
 
-Image2D MAXPOOL(Image2D image, int ker_size,int stride);
+void MAXPOOL(Image2D image,Image2D poolimg, int ker_size, int stride);
 
 void ImageInput(Image2D image, uint8_t*Data);
 

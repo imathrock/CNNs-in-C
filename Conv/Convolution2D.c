@@ -24,11 +24,30 @@ Image2D CreateKernel(int rows, int cols){
     kernel.rows = rows;
     kernel.cols = cols;
     kernel.Data = (float*)malloc(sizeof(float)*rows*cols);
-    for(int i = 0; i<rows*cols; i++){
-        kernel.Data[i] = (float)rand()/((float)RAND_MAX) - 0.5;
+    float limit = sqrtf(2.0f / rows);
+    for (int i = 0; i < rows * cols; i++) {
+        kernel.Data[i] = ((float)rand() / RAND_MAX) * limit;
     }
     kernel.maxidx = NULL;
     return kernel;
+}
+
+Image2D CreateConvImg(Image2D img, Image2D kernel){
+    Image2D image;
+    image.rows = img.rows-kernel.rows;
+    image.cols = img.cols-kernel.cols;
+    image.Data = (float*)malloc(sizeof(float)*image.rows*image.cols);
+    image.maxidx = (int*)malloc(image.cols*image.rows*sizeof(int));
+    return image;
+}
+
+Image2D CreatePoolImg(Image2D img, int ker_size, int stride){
+    Image2D image;
+    image.rows = (img.rows-ker_size)/stride+1;
+    image.cols = (img.cols-ker_size)/stride+1;
+    image.Data = (float*)malloc(sizeof(float)*image.rows*image.cols);
+    image.maxidx = (int*)malloc(image.cols*image.rows*sizeof(int));
+    return image;
 }
 
 void ImageInput(Image2D image, uint8_t*Data){
@@ -48,10 +67,10 @@ void ImageReLU(Image2D image){
 /// @param Kernel slides over the entire image
 /// @param image 
 /// @return convoluted image
-Image2D Conv2D(Image2D Kernel, Image2D image){
-    Image2D ret_img = CreateImage(image.rows-Kernel.rows,image.cols-Kernel.cols);
-    for(int i = 0; i<ret_img.rows;i++){
-        for (int j = 0; j < ret_img.cols; j++){
+void Conv2D(Image2D Kernel, Image2D image, Image2D convimg){
+    if (convimg.rows != (image.rows-Kernel.rows) || convimg.cols != (image.cols-Kernel.cols)){ perror("Convimg size incorrect"); exit(1); }
+    for(int i = 0; i<convimg.rows;i++){
+        for (int j = 0; j < convimg.cols; j++){
             float dotprod = 0;
             for (int ki = 0; ki < Kernel.rows; ki++){
                 int ridx = ((i+ki)*image.cols);
@@ -60,10 +79,9 @@ Image2D Conv2D(Image2D Kernel, Image2D image){
                     dotprod += image.Data[ridx+cidx]*Kernel.Data[(ki*Kernel.cols)+kj];
                 }
             }
-            ret_img.Data[i*ret_img.cols+j] = dotprod;
+            convimg.Data[i*convimg.cols+j] = dotprod;
         }
     }
-    return ret_img;
 }
 
 /// @brief Operates POOLing function on the image and returns it
@@ -71,12 +89,15 @@ Image2D Conv2D(Image2D Kernel, Image2D image){
 /// @param image the image to do pooling on
 /// @param ker_size size of the kernel that slides over the image
 /// @return Pooled image
-Image2D MAXPOOL(Image2D image, int ker_size, int stride){
-    Image2D ret_img = CreateImage((image.rows-ker_size)/stride+1,(image.cols-ker_size)/stride+1);
-    memset(ret_img.maxidx,-1,sizeof(int)*ret_img.cols*ret_img.rows);
+void MAXPOOL(Image2D poolimg, Image2D image, int ker_size, int stride){
+    if(poolimg.rows != (image.rows-ker_size)/stride+1 || poolimg.cols != (image.cols-ker_size)/stride+1) {
+        perror("Pool image is incorrect size"); 
+        exit(1); 
+    }
+    memset(poolimg.maxidx,-1,sizeof(int)*poolimg.cols*poolimg.rows);
     //looping over return image
-    for(int i = 0; i < ret_img.rows; i++){
-        for (int j = 0; j < ret_img.cols; j++){
+    for(int i = 0; i < poolimg.rows; i++){
+        for (int j = 0; j < poolimg.cols; j++){
 
             float max = -INFINITY;
             int idxmax = -1;
@@ -92,22 +113,16 @@ Image2D MAXPOOL(Image2D image, int ker_size, int stride){
                     if(stry+y>=image.cols) continue; 
                     // max check
                     float curr = Img_Data_Obj(image,strx+x,stry+y); // to prevent double loading
-                    // printf("curr: %f \n",curr);
                     if(curr > max){
                         max = curr;
                         idxmax = ((strx+x)*image.cols+(stry+y));
                     }
-
                 }
             }
-            // printf("max: %f\n",max);
-            Img_Data_Obj(ret_img,i,j) = max;
-            // printf("idxmax: %i\n",idxmax);
-            // printf("i*ret_img.cols+j = %i\n",i*ret_img.cols+j);
-            ret_img.maxidx[i*ret_img.cols+j] = idxmax;
+            Img_Data_Obj(poolimg,i,j) = max;
+            poolimg.maxidx[i*poolimg.cols+j] = idxmax;
         }
     }
-    return ret_img;
 }
 
 /// @brief Unpools the image from a pooled image and with metadata
@@ -160,7 +175,8 @@ void kernel_update(Image2D delta_kernel, Image2D Kernel, float learning_rate){
         __m256 v_ker = _mm256_loadu_ps(&Kernel.Data[i]);
         __m256 v_dker = _mm256_loadu_ps(&delta_kernel.Data[i]);
         __m256 mulvec = _mm256_mul_ps(lr_vec,v_dker);
-        v_ker = _mm256_sub_ps(mulvec,v_ker);
+        // Correct update: W = W - lr * dW
+        v_ker = _mm256_sub_ps(v_ker, mulvec);
         _mm256_storeu_ps(&Kernel.Data[i],v_ker);
     }
     for (; i < Kernel.cols*Kernel.rows; i++){
@@ -172,5 +188,5 @@ void kernel_update(Image2D delta_kernel, Image2D Kernel, float learning_rate){
 /// @brief Sets all the values in the kernel to zero
 /// @param Kernel The kernel to be zeroed out.
 void zero_kernel(Image2D Kernel){
-    memset(Kernel.Data,0.0f,Kernel.cols*Kernel.rows);
+    memset(Kernel.Data, 0, sizeof(float) * Kernel.cols * Kernel.rows);
 }

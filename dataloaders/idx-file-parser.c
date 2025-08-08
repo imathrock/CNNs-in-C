@@ -167,7 +167,7 @@ void image_data_finalizer(struct pixel_data* data) {
         return;
     }
     if (data->neuron_activation != NULL) {
-        for (uint32_t i = 0; i < data->rows; i++) {
+        for (uint32_t i = 0; i < data->size; i++) {
             if (data->neuron_activation[i] != NULL) {free(data->neuron_activation[i]);}
         }
         free(data->neuron_activation);
