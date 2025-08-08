@@ -74,7 +74,6 @@ activations*init_activations(int size);
 void Free_activations(activations*A);
 
 // Efficient Forward prop function.
-
 void activation_function(activations*A,act_func_t func);
 
 float loss_function(activations*A, loss_func_t func, int k);
@@ -87,28 +86,17 @@ void calc_grad_activation(activations* A_curr,DenseLayer*L,activations* A_prev);
 // Conducts 1 step of back propagation and also updates parameters immediately.
 void back_propogate_step(activations*A1,DenseLayer*L,activations* A2);
 
-// Given original weights, biases and gradient, updates all the values accordingly.
+void grad_accum(DenseLayer* L, float LR);
+
 void update_weights(DenseLayer*L, float LR);
 
 void zero_grad(DenseLayer*L);
-
-// Clears the Given layer.
-// void Zero_Layer(layer* L);
-
-// Inputs image data into activation struct.
-// void input_data(struct pixel_data* pixel_data, int k, struct activation* A);
 
 // Gets the largest activation value and returns it.
 int get_pred_from_softmax(activations *A);
 
 // test StandardizeActivations
 void StandardizeActivations(activations *A);
-
-// Prints out activation values for debugging.
-// void print_activation(struct activation* A);
-
-// Prints the contents of a layer struct.
-// void print_layer(const struct layer* l);
 
 // Shows the image at kth index.
 void show_image(struct pixel_data* pixel_data, int k);

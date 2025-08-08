@@ -8,7 +8,7 @@
 #include<omp.h>
 
 #define BATCH_SIZE 32
-#define NUM_KERNELS 5
+#define NUM_KERNELS 2
 
 void print_ascii_art(Image2D img) {
     for (int i = 0; i < img.rows; i++) {
@@ -34,8 +34,9 @@ int main(){
     // Training parameters
     float batch_time = 0.0f;
     int epoch = 3;
-    float learning_rate = 0.0001f;
+    float learning_rate = 0.001f;
     int size = pixel_data->size/BATCH_SIZE; 
+    loss_func_t lossfunc[3] = {CE,L1loss,L2loss};
     
     // layer sizes
     int lay1 = 121*NUM_KERNELS;
@@ -84,14 +85,14 @@ int main(){
             }
 
             // Forward
-            activation_function(A1, ReLU);
+            activation_function(A1, Tanh);
             forward_prop_step(A1, L1, A2);
             activation_function(A2, ReLU);
             forward_prop_step(A2, L2, A3);
             activation_function(A3, Softmax);
 
             // Loss
-            total_loss += loss_function(A3, L1loss, lbl_arr[k]) / BATCH_SIZE;
+            total_loss += loss_function(A3, lossfunc[epoch], lbl_arr[k]) / BATCH_SIZE;
 
             // Backward
             back_propogate_step(A2, L2, A3);
@@ -108,19 +109,20 @@ int main(){
                 backprop_kernel(del_kernel[i], kernels[i], convimg[i], image);
                 kernel_update(del_kernel[i], sum_del_kernel[i], 1);
             }
-            
+            grad_accum(L1,1);
+            grad_accum(L2,1);
         }
 
         float end = clock();
 
         // Apply gradient descent update
-        update_weights(L1, -learning_rate);
-        update_weights(L2, -learning_rate);
+        update_weights(L1, learning_rate);
+        update_weights(L2, learning_rate);
         zero_grad(L1);
         zero_grad(L2);
 
         for (int i = 0; i < NUM_KERNELS; i++) {
-            kernel_update(sum_del_kernel[i], kernels[i], learning_rate * 0.1f);
+            kernel_update(sum_del_kernel[i], kernels[i], learning_rate);
             zero_kernel(sum_del_kernel[i]);
         }
 
@@ -139,34 +141,36 @@ int main(){
     image_data_finalizer(pixel_data);
     image_label_finalizer(lbl_arr);
     
-    // FILE* test_file = fopen("fashion-mnist/t10k-images-idx3-ubyte", "rb");
-    // struct pixel_data* test_pix_data = get_image_pixel_data(test_file);
-    // test_file = fopen("fashion-mnist/t10k-labels-idx1-ubyte", "rb");
-    // unsigned char* test_lbl_arr = get_image_labels(test_file);
+    FILE* test_file = fopen("fashion-mnist/t10k-images-idx3-ubyte", "rb");
+    struct pixel_data* test_pix_data = get_image_pixel_data(test_file);
+    test_file = fopen("fashion-mnist/t10k-labels-idx1-ubyte", "rb");
+    unsigned char* test_lbl_arr = get_image_labels(test_file);
     
-    // printf("\n\nCalculating accuracy:-\n\n");
-    // int correct_pred = 0;
-    // for (unsigned int k = 0; k < test_pix_data->size; k++){
-    //     ImageInput(image,test_pix_data->neuron_activation[k]);
-        
-    //     for (int i = 0; i < NUM_KERNELS; i++){
-    //         convimg[i] = Conv2D(kernels[i],image);
-    //         Poolimg[i] = MAXPOOL(convimg[i],2,2);
-    //         int imgsize = Poolimg[i].rows*Poolimg[i].cols;
-    //         memcpy(AL1->activation+i*imgsize, Poolimg[i].Data,imgsize*sizeof(float));
-    //     }
+    printf("\n\nCalculating accuracy:-\n\n");
+    int correct_pred = 0;
+    for (unsigned int k = 0; k < test_pix_data->size; k++){
+        ImageInput(image, test_pix_data->neuron_activation[k]);
 
-    //     // Forward Propagation
-    //     ReLU(AL1); // Relu image
-    //     forward_prop_step(AL1, L1, AL2); // forward prop layer 1
-    //     ReLU(AL2); // Relu hidden 1
-    //     forward_prop_step(AL2, L2, AL3); // forward prop layer 2
-    //     softmax(AL3); // Softmax output layer
-    //     if(test_lbl_arr[k] == get_pred_from_softmax(AL3)){correct_pred++;}
-    //     if (k%100 == 0){printf(".");}
-    // }
-    // printf("\n\n Total Correct predictions: %d\n",correct_pred);
-    // printf("\n\n The Accuracy of the model is: %d/%d\n",correct_pred,test_pix_data->size);
+            // Conv + Pool
+            for (int i = 0; i < NUM_KERNELS; i++) {
+                convimg[i] = Conv2D(kernels[i], image);
+                Poolimg[i] = MAXPOOL(convimg[i], 2, 2);
+                int imgsize = Poolimg[i].rows * Poolimg[i].cols;
+                memcpy(A1->Z + i * imgsize, Poolimg[i].Data, imgsize * sizeof(float));
+            }
+
+            // Forward
+            activation_function(A1, Tanh);
+            forward_prop_step(A1, L1, A2);
+            activation_function(A2, ReLU);
+            forward_prop_step(A2, L2, A3);
+            activation_function(A3, Softmax);
+
+        if(test_lbl_arr[k] == get_pred_from_softmax(A3)){correct_pred++;}
+        if (k%100 == 0){printf(".");}
+    }
+    printf("\n\n Total Correct predictions: %d\n",correct_pred);
+    printf("\n\n The Accuracy of the model is: %d/%d\n",correct_pred,test_pix_data->size);
     
     return 1;
 }

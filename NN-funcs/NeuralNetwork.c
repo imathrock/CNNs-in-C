@@ -556,6 +556,42 @@ void back_propogate_step(activations*A1,DenseLayer*L,activations* A2){
     }
 }
 
+/// @brief Gradient Accumulator
+/// @param L 
+/// @param LR 
+void grad_accum(DenseLayer* L, float LR) {
+    __m256 LR_vec = _mm256_set1_ps(LR);
+
+    // Accumulate biases
+    int i = 0;
+    for (; i + 7 < L->rows; i += 8) {
+        __m256 grad = _mm256_loadu_ps(&L->param_grad->biases[i]);
+        __m256 acc = _mm256_loadu_ps(&L->param_grad_sum->biases[i]);
+        __m256 scaled = _mm256_mul_ps(LR_vec, grad);
+        acc = _mm256_add_ps(acc, scaled);
+        _mm256_storeu_ps(&L->param_grad_sum->biases[i], acc);
+    }
+    for (; i < L->rows; i++) {
+        L->param_grad_sum->biases[i] += LR * L->param_grad->biases[i];
+    }
+
+    // Accumulate weights
+    for (int i = 0; i < L->rows; i++) {
+        int j = 0;
+        for (; j + 7 < L->cols; j += 8) {
+            __m256 grad = _mm256_loadu_ps(&L_WEIGHT(L->param_grad, i, j, L->cols));
+            __m256 acc = _mm256_loadu_ps(&L_WEIGHT(L->param_grad_sum, i, j, L->cols));
+            __m256 scaled = _mm256_mul_ps(LR_vec, grad);
+            acc = _mm256_add_ps(acc, scaled);
+            _mm256_storeu_ps(&L_WEIGHT(L->param_grad_sum, i, j, L->cols), acc);
+        }
+        for (; j < L->cols; j++) {
+            L_WEIGHT(L->param_grad_sum, i, j, L->cols) += LR * L_WEIGHT(L->param_grad, i, j, L->cols);
+        }
+    }
+}
+
+
 /// @brief Given original weights, biases and gradient, updates all the values accordingly
 /// @param DenseLayer
 /// @param LR learning rate
@@ -563,11 +599,11 @@ void update_weights(DenseLayer*L, float LR){
     __m256 LR_vec = _mm256_set1_ps(LR);
     int i = 0;
     for(; i+7 < L->rows; i+=8){
-        __m256 v_bias = _mm256_loadu_ps(&L->param_grad->biases[i]);
+        __m256 v_bias = _mm256_loadu_ps(&L->params->biases[i]);
         __m256 v_dbias = _mm256_loadu_ps(&L->param_grad_sum->biases[i]);
         __m256 mulvec = _mm256_mul_ps(LR_vec,v_dbias);
         v_bias = _mm256_sub_ps(v_bias,mulvec);
-        _mm256_storeu_ps(&L->param_grad->biases[i],v_bias);
+        _mm256_storeu_ps(&L->params->biases[i],v_bias);
     }
     for (; i < L->rows; i++) {
         L->params->biases[i] -= LR * L->param_grad_sum->biases[i];
@@ -582,7 +618,7 @@ void update_weights(DenseLayer*L, float LR){
             _mm256_storeu_ps(&L_WEIGHT(L->params,i,j,L->cols),v_w);
         }
         for (; j < L->cols; j++) {
-             L_WEIGHT(L->params,i,j,L->cols) += LR*L_WEIGHT(L->params,i,j,L->cols);
+             L_WEIGHT(L->params,i,j,L->cols) -= LR*L_WEIGHT(L->param_grad_sum,i,j,L->cols);
         }
     }
 }

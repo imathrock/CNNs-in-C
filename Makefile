@@ -1,7 +1,7 @@
 # tutorial referred on website: https://www.cs.colby.edu/maxwell/courses/tutorials/maketutor/
 # Compiler and Flags
 CC = gcc
-CFLAGS = -I. -Wall -Wextra -g -march=haswell -std=c99
+CFLAGS = -I. -Wall -Wextra -g  -std=c99 -mavx2
 
 
 DEPS = dataloaders/idx-file-parser.h NN-funcs/NeuralNetwork.h Conv/Convolution2D.h
