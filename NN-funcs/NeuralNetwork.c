@@ -9,6 +9,7 @@
 
 
 #define L_WEIGHT(L, i, j, cols)  (L->Weights[((i) * cols) + (j)])
+#define L_WEIGHT_T(L, i, j, rows)  (L->Weights_T[((i) * rows) + (j)])
 
 /// @brief Box Muller transform, computes random number on mean=0 and var=1 spectrum. Generates 2 numbers, returns spare on second call.
 /// @return random number
@@ -56,7 +57,13 @@ layer* init_layer(int rows, int cols, int init_type){
         free(Layer);
         return NULL;
     }
-
+    Layer->Weights_T = (float*)malloc(rows * cols * sizeof(float));
+    if (Layer->Weights_T == NULL) {
+        perror("Failed to allocate memory for Layer->Weights");
+        free(Layer->biases);
+        free(Layer);
+        return NULL;
+    }
     // Set biases to 0
     memset(Layer->biases,0.0f,sizeof(float)*rows);
 
@@ -182,7 +189,7 @@ layer* init_layer(int rows, int cols, int init_type){
             }
             break;
     }
-    
+    memcpy(Layer->Weights_T,Layer->Weights,sizeof(float)*rows*cols);
     return Layer;
 }
 
@@ -644,9 +651,22 @@ void calc_grad_activation(activations* A1,DenseLayer*L,activations* A2){
     if(L->cols != A1->size){perror("The Layer matricies and curr_grad layer matricies do not match");exit(1);}
     for (int i = 0; i < L->cols; i++) {
         float sum = 0.0f;
-        for (int j = 0; j < L->rows; j++) {
-            // Propagate using next layer's dZ, not gprime
-            sum += L_WEIGHT(L->params, j, i,L->cols) * A2->dZ[j]; 
+        __m256 sumvec = _mm256_setzero_ps();
+        int j = 0;
+        const float*weights = &L_WEIGHT_T(L->params, i, 0, L->rows);
+        for (; j+7 < L->rows; j+=8) {
+            __m256 A2vec = _mm256_load_ps(&A2->dZ[j]);
+            __m256 weightvec = _mm256_load_ps(&weights[j]);
+            sumvec = _mm256_fmadd_ps(weightvec,A2vec,sumvec);
+        }
+        __m128 bottom = _mm256_castps256_ps128(sumvec);
+        __m128 top = _mm256_extractf128_ps(sumvec,1);
+        bottom = _mm_add_ps(top,bottom);
+        bottom = _mm_hadd_ps(bottom,bottom);
+        bottom = _mm_hadd_ps(bottom,bottom);
+        sum = _mm_cvtss_f32(bottom);
+        for (; j < L->rows; j++) {
+            sum += weights[j] * A2->dZ[j]; 
         }
         A1->dZ[i] = sum * A1->gprime[i];
     }
@@ -734,9 +754,14 @@ void update_weights(DenseLayer*L, float LR){
             __m256 mulvec = _mm256_mul_ps(LR_vec,vdW);
             v_w = _mm256_sub_ps(v_w,mulvec);
             _mm256_storeu_ps(&L_WEIGHT(L->params,i,j,L->cols),v_w);
+            for (int k = 0; k < 8; k++) {
+                L_WEIGHT_T(L->params, j + k, i, L->rows) = L_WEIGHT(L->params, i, j + k, L->cols);
+            }
         }
         for (; j < L->cols; j++) {
-             L_WEIGHT(L->params,i,j,L->cols) -= LR*L_WEIGHT(L->param_grad_sum,i,j,L->cols);
+            float new_w = L_WEIGHT(L->params, i, j, L->cols) - LR * L_WEIGHT(L->param_grad_sum, i, j, L->cols);
+            L_WEIGHT(L->params, i, j, L->cols) = new_w;
+            L_WEIGHT_T(L->params, j, i, L->rows) = new_w;
         }
     }
 }

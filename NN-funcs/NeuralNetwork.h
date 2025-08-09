@@ -35,6 +35,7 @@ typedef enum {
 // Structure containing pointers to Weights and biases of the layers.
 typedef struct {
     float* Weights;
+    float* Weights_T;
     float* biases;
 } layer;
 
