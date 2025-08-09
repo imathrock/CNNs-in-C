@@ -1,4 +1,4 @@
-# CNNs-in-C: Convolutional Neural Networks in Pure C
+# Convolutional Neural Networks in Pure C
 
 A high-performance implementation of Convolutional Neural Networks (CNNs) written entirely in C, featuring SIMD optimizations and support for MNIST and Fashion MNIST datasets.
 
@@ -29,9 +29,10 @@ Note: Almost all of the code was written with minimal help from LLMs. Only help 
 
 | Dataset | Accuracy | Training Time |
 |---------|----------|---------------|
-| MNIST | ~94% | ~2-3 minutes |
-| Fashion MNIST | ~90% | ~3-4 minutes |
+| MNIST | ~96% | ~10 minutes |
+| Fashion MNIST | ~90% | ~15 minutes |
 
+MNIST was trained on 10 epochs, ~50s per epoch
 *Performance may vary based on hardware specifications*
 
 ##  Requirements

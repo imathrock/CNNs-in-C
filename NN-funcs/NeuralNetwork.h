@@ -75,6 +75,7 @@ void Free_activations(activations*A);
 
 // Efficient Forward prop function.
 void activation_function(activations*A,act_func_t func);
+void inference_activation_function(activations* A, act_func_t func);
 
 float loss_function(activations*A, loss_func_t func, int k);
 

@@ -8,6 +8,7 @@
 
 #define BATCH_SIZE 64
 #define NUM_KERNELS 32
+#define KERNEL_SIZE 5
 
 void print_ascii_art(Image2D img) {
     for (int i = 0; i < img.rows; i++) {
@@ -20,20 +21,25 @@ void print_ascii_art(Image2D img) {
     }
 }
 
-int main(){
 
+int main(){
+    int accuracy[500];
+    int i = 0;
+    for (float learning_rate = 0.00001; learning_rate < 0.005f; learning_rate+=0.00001){
+    printf("\n\n---------------------------------------\n");
+    printf("          Iteration no %i                  ", i);
+    printf("\n---------------------------------------\n\n");
     // preprocess the data.
-    FILE* file = fopen("mnist/train-images-idx3-ubyte/train-images-idx3-ubyte", "rb");
+    FILE* file = fopen("fashion-mnist/train-images-idx3-ubyte", "rb");
     struct pixel_data* pixel_data = get_image_pixel_data(file);
     fclose(file);
-    file = fopen("mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte", "rb");
+    file = fopen("fashion-mnist/train-labels-idx1-ubyte", "rb");
     unsigned char* lbl_arr = get_image_labels(file);
     fclose(file);
     
+    //10 epochs 0.0005 lr 88.97%
     // Training parameters
-    float batch_time = 0.0f;
-    int epoch = 5;
-    float learning_rate = 0.0005f;
+    int epoch = 1;
     int size = pixel_data->size/BATCH_SIZE; 
     
     // layer sizes
@@ -48,9 +54,9 @@ int main(){
     activations*A4 = init_activations(lay4);   
     
     // Layer init
-    DenseLayer* L1 = init_DenseLayer(lay2,lay1,1);
-    DenseLayer* L2 = init_DenseLayer(lay3,lay2,1);
-    DenseLayer* L3 = init_DenseLayer(lay4,lay3,1);
+    DenseLayer* L1 = init_DenseLayer(lay2,lay1,5);
+    DenseLayer* L2 = init_DenseLayer(lay3,lay2,5);
+    DenseLayer* L3 = init_DenseLayer(lay4,lay3,5);
     
     // Create Image
     Image2D image = CreateImage(pixel_data->rows, pixel_data->cols);
@@ -60,9 +66,9 @@ int main(){
     Image2D del_kernel[NUM_KERNELS];
     Image2D sum_del_kernel[NUM_KERNELS];
     for (int i = 0; i < NUM_KERNELS; i++){
-        kernels[i] = CreateKernel(5, 5);
-        del_kernel[i] = CreateKernel(5, 5);
-        sum_del_kernel[i] = CreateKernel(5, 5);
+        kernels[i] = CreateKernel(KERNEL_SIZE, KERNEL_SIZE);
+        del_kernel[i] = CreateKernel(KERNEL_SIZE, KERNEL_SIZE);
+        sum_del_kernel[i] = CreateKernel(KERNEL_SIZE, KERNEL_SIZE);
         // Ensure gradient buffers start at zero
         zero_kernel(del_kernel[i]);
         zero_kernel(sum_del_kernel[i]);
@@ -78,9 +84,9 @@ int main(){
     
 
     while (epoch--) {
+        float start = clock();
         for (int j = 0; j < size; j++) {
             float total_loss = 0.0f;
-            float start = clock();
     
             for (int k = BATCH_SIZE * j; k < BATCH_SIZE * (j + 1); k++) {
                 // Load image
@@ -93,9 +99,6 @@ int main(){
                     int imgsize = Poolimg[i].rows * Poolimg[i].cols;
                     memcpy(A1->Z + i * imgsize, Poolimg[i].Data, imgsize * sizeof(float));
                 }
-                // print_ascii_art(image); // Should show digit
-                // print_ascii_art(Poolimg[0]); // Should still resemble digit-ish blobs
-
                 // Forward
                 activation_function(A1, ReLU);
                 forward_prop_step(A1, L1, A2);
@@ -134,8 +137,7 @@ int main(){
                 grad_accum(L3,1);
             }
     
-            float end = clock();
-    
+            
             // Apply gradient descent update
             update_weights(L1, learning_rate);
             update_weights(L2, learning_rate);
@@ -143,21 +145,14 @@ int main(){
             zero_grad(L1);
             zero_grad(L2);
             zero_grad(L3);
-    
+            
             for (int i = 0; i < NUM_KERNELS; i++) {
                 kernel_update(sum_del_kernel[i], kernels[i], learning_rate);
                 zero_kernel(sum_del_kernel[i]);
             }
-    
-            float bt = ((end - start) / CLOCKS_PER_SEC) * 1000;
-            printf("\n\nBatch Loss: %f\nEpoch: %d", total_loss, epoch);
-            printf("\nBatch process time: %f ms\n", bt);
-    
-            batch_time += bt;
         }
-    
-        batch_time /= size;
-        printf("Average Batch time: %f ms\nBatch size: 32\n", batch_time);
+        float end = clock();
+        printf("Epoch %i time: %f s\n", epoch,((end - start) / CLOCKS_PER_SEC));
         
     }
 
@@ -165,11 +160,11 @@ int main(){
     image_data_finalizer(pixel_data);
     image_label_finalizer(lbl_arr);
     
-    FILE* test_file = fopen("mnist/t10k-images.idx3-ubyte", "rb");
+    FILE* test_file = fopen("fashion-mnist/t10k-images-idx3-ubyte", "rb");
     struct pixel_data* test_pix_data = get_image_pixel_data(test_file);
-    test_file = fopen("mnist/t10k-labels.idx1-ubyte", "rb");
+    test_file = fopen("fashion-mnist/t10k-labels-idx1-ubyte", "rb");
     unsigned char* test_lbl_arr = get_image_labels(test_file);
-    
+    float start = clock();
     printf("\n\nCalculating accuracy:-\n\n");
     int correct_pred = 0;
     for (unsigned int k = 0; k < test_pix_data->size; k++){
@@ -184,19 +179,29 @@ int main(){
             }
 
             // Forward
-            activation_function(A1, ReLU);
+            inference_activation_function(A1, ReLU);
             forward_prop_step(A1, L1, A2);
-            activation_function(A2, ReLU);
+            inference_activation_function(A2, ReLU);
             forward_prop_step(A2, L2, A3);
-            activation_function(A3, ReLU);
+            inference_activation_function(A3, ReLU);
             forward_prop_step(A3, L3, A4);
-            activation_function(A4, Softmax);
+            inference_activation_function(A4, Softmax);
 
         if(test_lbl_arr[k] == get_pred_from_softmax(A4)){correct_pred++;}
         if (k%1000 == 0){printf(".");}
     }
+    float end = clock();
+    printf("\n\nTesting 10000 inferences, time: %f ms\n",((end - start) / CLOCKS_PER_SEC) * 1000);
     printf("\n\n Total Correct predictions: %d\n",correct_pred);
-    printf("\n\n The Accuracy of the model is: %d/%d\n",correct_pred,test_pix_data->size);
+    printf("\n\n The Accuracy of the model is: %d/%d\n\n",correct_pred,test_pix_data->size);
+    accuracy[++i] = correct_pred;
+    printf("\n\n---------------------------------------\n");
+    printf("            END ITERATION                    ");
+    printf("\n---------------------------------------\n\n");
+    }
+    for (int i = 0; i < 500; i++){
+        printf("\naccuracy[%i] = %i, LR : %f\n", i,accuracy[i],0.00001*i);
+    }
     
     return 1;
 }

@@ -68,15 +68,33 @@ void ImageReLU(Image2D image){
 /// @param image 
 /// @return convoluted image
 void Conv2D(Image2D Kernel, Image2D image, Image2D convimg){
-    if (convimg.rows != (image.rows-Kernel.rows) || convimg.cols != (image.cols-Kernel.cols)){ perror("Convimg size incorrect"); exit(1); }
-    for(int i = 0; i<convimg.rows;i++){
-        for (int j = 0; j < convimg.cols; j++){
-            float dotprod = 0;
+    if (convimg.rows != (image.rows-Kernel.rows) || convimg.cols != (image.cols-Kernel.cols)){ 
+        perror("Convimg size incorrect"); 
+        exit(1); 
+    }
+    for(int i = 0; i < convimg.rows; i++){
+        int j = 0;
+        // Vectorized loop - process 8 output pixels at once
+        for (; j+7 < convimg.cols; j += 8){
+            __m256 dotprod = _mm256_setzero_ps();
             for (int ki = 0; ki < Kernel.rows; ki++){
                 int ridx = ((i+ki)*image.cols);
                 for(int kj = 0; kj < Kernel.cols; kj++){
                     int cidx = (j+kj);
-                    dotprod += image.Data[ridx+cidx]*Kernel.Data[(ki*Kernel.cols)+kj];
+                    __m256 ker_vec = _mm256_set1_ps(Kernel.Data[(ki*Kernel.cols)+kj]);
+                    __m256 img_vec = _mm256_loadu_ps(&image.Data[ridx+cidx]);
+                    dotprod = _mm256_fmadd_ps(ker_vec, img_vec, dotprod);
+                }
+            }
+            _mm256_storeu_ps(&convimg.Data[i*convimg.cols+j], dotprod);
+        }
+        for (; j < convimg.cols; j++){
+            float dotprod = 0.0f;
+            for (int ki = 0; ki < Kernel.rows; ki++){
+                int ridx = ((i+ki)*image.cols);
+                for(int kj = 0; kj < Kernel.cols; kj++){
+                    int cidx = (j+kj);
+                    dotprod += image.Data[ridx+cidx] * Kernel.Data[(ki*Kernel.cols)+kj];
                 }
             }
             convimg.Data[i*convimg.cols+j] = dotprod;

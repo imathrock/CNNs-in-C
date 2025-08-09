@@ -387,6 +387,111 @@ void activation_function(activations*A,act_func_t func){
     }
 }
 
+/// @brief Activation function for inference
+/// @param A Activations struct
+/// @param func act func, default identity.
+void inference_activation_function(activations* A, act_func_t func) {
+    switch (func) {
+    case ReLU:
+        for (int i = 0; i < A->size; i++) {
+            if (A->Z[i] <= 0) { A->Z[i] = 0; }
+        }
+        break;
+
+    case Sigmoid:
+        for (int i = 0; i < A->size; i++) {
+            A->Z[i] = 1.0f / (1.0f + safe_exp(-A->Z[i])); 
+        }
+        break;
+
+    case Tanh:
+        for (int i = 0; i < A->size; i++) {
+            A->Z[i] = tanhf(A->Z[i]);
+        }
+        break;
+
+    case LeakyRelu: {
+        const float alpha = 0.01f; 
+        for (int i = 0; i < A->size; i++) {
+            if (A->Z[i] <= 0) { A->Z[i] *= alpha; }
+        }
+        break;
+    }
+
+    case PReLU: {
+        const float alpha = 0.25f; // Should be learnable parameter
+        for (int i = 0; i < A->size; i++) {
+            if (A->Z[i] <= 0) { A->Z[i] *= alpha; }
+        }
+        break;
+    }
+
+    case ELU: {
+        const float alpha = 1.0f;
+        for (int i = 0; i < A->size; i++) {
+            if (A->Z[i] <= 0) {
+                A->Z[i] = alpha * (safe_exp(A->Z[i]) - 1.0f);
+            }
+        }
+        break;
+    }
+
+    case SELU: {
+        const float alpha = 1.6732632423543772f;
+        const float scale = 1.0507009873554805f;
+        for (int i = 0; i < A->size; i++) {
+            if (A->Z[i] <= 0) {
+                float exp_z = safe_exp(A->Z[i]);
+                A->Z[i] = scale * alpha * (exp_z - 1.0f);
+            } else {
+                A->Z[i] *= scale;
+            }
+        }
+        break;
+    }
+
+    case GELU:
+        for (int i = 0; i < A->size; i++) {
+            float x = A->Z[i];
+            A->Z[i] = gelu_approx(x);
+        }
+        break;
+
+    case Swish:
+        for (int i = 0; i < A->size; i++) {
+            float x = A->Z[i];
+            float sigmoid = 1.0f / (1.0f + safe_exp(-x));
+            A->Z[i] = x * sigmoid;
+        }
+        break;
+
+    case Softmax: {
+        int k = A->size;
+        float max = A->Z[0];
+        for (int i = 1; i < k; i++) {
+            if (A->Z[i] > max) max = A->Z[i]; // find max
+        }
+        float expsum = 0.0f;
+        for (int i = 0; i < k; i++) {
+            A->Z[i] = safe_exp(A->Z[i] - max); // Use safe_exp for consistency
+            expsum += A->Z[i];
+        }
+        if (expsum == 0.0f) {
+            perror("Softmax error: expsum is zero");
+            exit(1);
+        }
+        for (int i = 0; i < k; i++) {
+            A->Z[i] /= expsum;
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+
 /// @brief Applies loss function to final layer
 /// @param A activation buffer
 /// @param func loss function
