@@ -472,3 +472,4 @@ for (int epoch = 0; epoch < num_epochs; epoch++) {
 - Using uninitialized structures
 - Memory leaks from not freeing structures
 - Incorrect activation function for loss type
+

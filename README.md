@@ -29,8 +29,8 @@ Note: Almost all of the code was written with minimal help from LLMs. Only help 
 
 | Dataset | Accuracy | Training Time |
 |---------|----------|---------------|
-| MNIST | ~96% | ~10 minutes |
-| Fashion MNIST | ~90% | ~15 minutes |
+| MNIST | ~96% | ~6 minutes |
+| Fashion MNIST | ~90% | ~6 minutes |
 
 MNIST was trained on 10 epochs, ~50s per epoch
 *Performance may vary based on hardware specifications*

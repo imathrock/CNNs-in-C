@@ -291,3 +291,4 @@ free(img.maxidx);
 2. **Memory Leaks:** Forgetting to free allocated images
 3. **Null Pointers:** Not checking if memory allocation succeeded
 4. **Incorrect Strides:** Using wrong stride values in pooling operations
+

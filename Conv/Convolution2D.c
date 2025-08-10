@@ -155,7 +155,6 @@ void MAXUNPOOL(Image2D unpooled, Image2D pooled) {
         if(pooled.maxidx[i] < 0 || pooled.maxidx[i] > unpooled.rows*unpooled.cols) continue;
         else{ unpooled.Data[pooled.maxidx[i]] = pooled.Data[i]; }
     }
-
 }
 
 /**
@@ -173,6 +172,7 @@ void backprop_kernel(Image2D delta_kernel,Image2D Kernel, Image2D Unpooled, Imag
     for(int i = 0; i<Unpooled.rows;i++){
         for (int j = 0; j < Unpooled.cols; j++){
             int curidx = i*Unpooled.cols+j;
+            if(Unpooled.Data[curidx] == 0.0f) continue;
             for(int x = 0; x < Kernel.rows; x++){
                 int ridx = (i+x)*Image.cols;
                 for(int y = 0; y < Kernel.cols; y++){
@@ -183,6 +183,7 @@ void backprop_kernel(Image2D delta_kernel,Image2D Kernel, Image2D Unpooled, Imag
         }
     }
 }
+
 
 /// @brief Updates the kernel parameters using the computed gradients.
 /// @param delta_kernel Gradient of the kernel. 

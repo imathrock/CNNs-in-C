@@ -23,12 +23,12 @@ void print_ascii_art(Image2D img) {
 
 
 int main(){
-    int accuracy[500];
-    int i = 0;
-    for (float learning_rate = 0.00001; learning_rate < 0.005f; learning_rate+=0.00001){
-    printf("\n\n---------------------------------------\n");
-    printf("          Iteration no %i                  ", i);
-    printf("\n---------------------------------------\n\n");
+    // int accuracy[500];
+    // int i = 0;
+    // for (float learning_rate = 0.00001; learning_rate < 0.005f; learning_rate+=0.00001){
+    // printf("\n\n---------------------------------------\n");
+    // printf("          Iteration no %i                  ", i);
+    // printf("\n---------------------------------------\n\n");
     // preprocess the data.
     FILE* file = fopen("fashion-mnist/train-images-idx3-ubyte", "rb");
     struct pixel_data* pixel_data = get_image_pixel_data(file);
@@ -39,7 +39,8 @@ int main(){
     
     //10 epochs 0.0005 lr 88.97%
     // Training parameters
-    int epoch = 1;
+    int epoch = 20;
+    float learning_rate = 0.0004;
     int size = pixel_data->size/BATCH_SIZE; 
     
     // layer sizes
@@ -194,14 +195,14 @@ int main(){
     printf("\n\nTesting 10000 inferences, time: %f ms\n",((end - start) / CLOCKS_PER_SEC) * 1000);
     printf("\n\n Total Correct predictions: %d\n",correct_pred);
     printf("\n\n The Accuracy of the model is: %d/%d\n\n",correct_pred,test_pix_data->size);
-    accuracy[++i] = correct_pred;
-    printf("\n\n---------------------------------------\n");
-    printf("            END ITERATION                    ");
-    printf("\n---------------------------------------\n\n");
-    }
-    for (int i = 0; i < 500; i++){
-        printf("\naccuracy[%i] = %i, LR : %f\n", i,accuracy[i],0.00001*i);
-    }
+    // accuracy[++i] = correct_pred;
+    // printf("\n\n---------------------------------------\n");
+    // printf("            END ITERATION                    ");
+    // printf("\n---------------------------------------\n\n");
+    // }
+    // for (int i = 0; i < 500; i++){
+    //     printf("\naccuracy[%i] = %i, LR : %f\n", i,accuracy[i],0.00001*i);
+    // }
     
     return 1;
 }
