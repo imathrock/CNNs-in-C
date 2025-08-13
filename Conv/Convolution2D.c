@@ -34,8 +34,8 @@ Image2D CreateKernel(int rows, int cols){
 
 Image2D CreateConvImg(Image2D img, Image2D kernel){
     Image2D image;
-    image.rows = img.rows-kernel.rows;
-    image.cols = img.cols-kernel.cols;
+    image.rows = img.rows-kernel.rows+1;
+    image.cols = img.cols-kernel.cols+1;
     image.Data = (float*)malloc(sizeof(float)*image.rows*image.cols);
     image.maxidx = (int*)malloc(image.cols*image.rows*sizeof(int));
     return image;
@@ -68,7 +68,7 @@ void ImageReLU(Image2D image){
 /// @param image 
 /// @return convoluted image
 void Conv2D(Image2D Kernel, Image2D image, Image2D convimg){
-    if (convimg.rows != (image.rows-Kernel.rows) || convimg.cols != (image.cols-Kernel.cols)){ 
+    if (convimg.rows != (image.rows-Kernel.rows+1) || convimg.cols != (image.cols-Kernel.cols+1)){ 
         perror("Convimg size incorrect"); 
         exit(1); 
     }
@@ -109,6 +109,7 @@ void Conv2D(Image2D Kernel, Image2D image, Image2D convimg){
 /// @return Pooled image
 void MAXPOOL(Image2D poolimg, Image2D image, int ker_size, int stride){
     if(poolimg.rows != (image.rows-ker_size)/stride+1 || poolimg.cols != (image.cols-ker_size)/stride+1) {
+        printf("image rows %i and poolimg rows %i\n",(image.rows-ker_size)/stride+1,poolimg.rows);
         perror("Pool image is incorrect size"); 
         exit(1); 
     }
@@ -149,10 +150,10 @@ void MAXPOOL(Image2D poolimg, Image2D image, int ker_size, int stride){
 /// @param UPMD metadata
 void MAXUNPOOL(Image2D unpooled, Image2D pooled) {
     // Zero out the unpooled image
-    memset(unpooled.Data,0.0f,sizeof(float)*unpooled.rows*unpooled.cols);
+    memset(unpooled.Data,0,sizeof(float)*unpooled.rows*unpooled.cols);
     // Unpool with bounds checking
     for(int i = 0; i < pooled.rows*pooled.cols; i++) {
-        if(pooled.maxidx[i] < 0 || pooled.maxidx[i] > unpooled.rows*unpooled.cols) continue;
+        if(pooled.maxidx[i] < 0 || pooled.maxidx[i] >= unpooled.rows*unpooled.cols) continue;
         else{ unpooled.Data[pooled.maxidx[i]] = pooled.Data[i]; }
     }
 }

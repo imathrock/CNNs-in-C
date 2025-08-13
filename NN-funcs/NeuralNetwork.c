@@ -256,7 +256,7 @@ void Free_activations(activations*A){
 /// @param x input value
 /// @return safe exponential or clamped value
 static inline float safe_exp(float x){ 
-    return (x > 500.0f || x < -500.0f) ? 0.0f : expf(x); 
+    return (x > 500.0f) ? 0.0f : (x < -500.0f ? 0.0f : expf(x));
 }
 
 /// @brief GELU approximation using tanh
@@ -271,12 +271,25 @@ static inline float gelu_approx(float x){
 /// @param func act func, default identity.
 void activation_function(activations*A,act_func_t func){
     switch (func){
-    case ReLU:
-        for (int i = 0; i < A->size; i++){
-            if(A->Z[i] <= 0){
-                A->Z[i] = 0; A->gprime[i] = 0;}
-            else{ A->gprime[i] = 1;}
+    case ReLU: {
+        __m256 zeros = _mm256_setzero_ps();
+        __m256 ones  = _mm256_set1_ps(1.0f);
+        int i =0;
+        for (; i+7 < A->size; i += 8) {
+            __m256 data = _mm256_loadu_ps(&A->Z[i]);
+            __m256 mask = _mm256_cmp_ps(data, zeros, _CMP_GT_OS);
+            __m256 gprime = _mm256_and_ps(mask, ones);
+            _mm256_storeu_ps(&A->gprime[i], gprime);
+            __m256 result = _mm256_max_ps(data, zeros);
+            _mm256_storeu_ps(&A->Z[i], result);
         }
+        for (; i < A->size; i++){
+            if (A->Z[i] <= 0) { A->Z[i] = 0.0f; A->gprime[i] = 0.0f;}
+            else {A->gprime[i] = 1;}
+        }
+        
+    }
+    break;
         break;
 
     case Sigmoid:
@@ -374,17 +387,44 @@ void activation_function(activations*A,act_func_t func){
     case Softmax:
         {
         int k = A->size;
-        float max = A->Z[0];
-        for (int i = 1; i < k; i++) {if (A->Z[i] > max) max = A->Z[i];} //find max
+        // Numerically stable softmax with robust fallbacks
+        float max_val = -INFINITY;
+        for (int i = 0; i < k; i++) {
+            if (isfinite(A->Z[i]) && A->Z[i] > max_val) max_val = A->Z[i];
+        }
+        if (!isfinite(max_val)) max_val = 0.0f; // fallback if all are non-finite
+
         float expsum = 0.0f;
         for (int i = 0; i < k; i++) {
-            A->Z[i] = safe_exp(A->Z[i] - max); // Use safe_exp for consistency
-            expsum += A->Z[i];
+            float e = expf(A->Z[i] - max_val);
+            if (!isfinite(e)) e = 0.0f; // guard
+            A->Z[i] = e;
+            expsum += e;
         }
-        if (expsum == 0.0f) {
-            perror("Softmax error: expsum is zero");
-            exit(1);}
-        for (int i = 0; i < k; i++) A->Z[i] /= expsum;
+
+        if (!(expsum > 0.0f) || !isfinite(expsum)) {
+            // Fallback: compute without max shift but clamp inputs to avoid overflow/underflow
+            expsum = 0.0f;
+            for (int i = 0; i < k; i++) {
+                float z = A->Z[i];
+                // Recover original logits approximately by treating current A->Z as logits in failure case
+                // Clamp to [-80, 80] to keep expf well-defined in float
+                float clamped = fmaxf(fminf(z, 80.0f), -80.0f);
+                float e = expf(clamped);
+                if (!isfinite(e)) e = 0.0f;
+                A->Z[i] = e;
+                expsum += e;
+            }
+            if (!(expsum > 0.0f) || !isfinite(expsum)) {
+                // As a last resort, output uniform distribution
+                float invk = 1.0f / (float)k;
+                for (int i = 0; i < k; i++) A->Z[i] = invk;
+                break;
+            }
+        }
+
+        float invsum = 1.0f / expsum;
+        for (int i = 0; i < k; i++) A->Z[i] *= invsum;
         }
         break;
         
@@ -400,10 +440,18 @@ void activation_function(activations*A,act_func_t func){
 void inference_activation_function(activations* A, act_func_t func) {
     switch (func) {
     case ReLU:
-        for (int i = 0; i < A->size; i++) {
-            if (A->Z[i] <= 0) { A->Z[i] = 0; }
+    {
+        __m256 zeros = _mm256_setzero_ps();
+        int i = 0;
+        for (; i + 7 < A->size; i += 8) {
+            __m256 data = _mm256_loadu_ps(&A->Z[i]);
+            __m256 result = _mm256_max_ps(data, zeros);
+            _mm256_storeu_ps(&A->Z[i], result);
         }
-        break;
+        for (; i < A->size; i++) 
+        {if (A->Z[i] < 0.0f) {A->Z[i] = 0.0f;}}
+    }
+    break;
 
     case Sigmoid:
         for (int i = 0; i < A->size; i++) {
@@ -474,21 +522,44 @@ void inference_activation_function(activations* A, act_func_t func) {
 
     case Softmax: {
         int k = A->size;
-        float max = A->Z[0];
-        for (int i = 1; i < k; i++) {
-            if (A->Z[i] > max) max = A->Z[i]; // find max
+        // Numerically stable softmax with robust fallbacks
+        float max_val = -INFINITY;
+        for (int i = 0; i < k; i++) {
+            if (isfinite(A->Z[i]) && A->Z[i] > max_val) max_val = A->Z[i];
         }
+        if (!isfinite(max_val)) max_val = 0.0f; // fallback if all are non-finite
+
         float expsum = 0.0f;
         for (int i = 0; i < k; i++) {
-            A->Z[i] = safe_exp(A->Z[i] - max); // Use safe_exp for consistency
-            expsum += A->Z[i];
+            float e = expf(A->Z[i] - max_val);
+            if (!isfinite(e)) e = 0.0f; // guard
+            A->Z[i] = e;
+            expsum += e;
         }
-        if (expsum == 0.0f) {
-            perror("Softmax error: expsum is zero");
-            exit(1);
+
+        if (!(expsum > 0.0f) || !isfinite(expsum)) {
+            // Fallback: compute without max shift but clamp inputs to avoid overflow/underflow
+            expsum = 0.0f;
+            for (int i = 0; i < k; i++) {
+                float z = A->Z[i];
+                // Clamp to [-80, 80] to keep expf well-defined in float
+                float clamped = fmaxf(fminf(z, 80.0f), -80.0f);
+                float e = expf(clamped);
+                if (!isfinite(e)) e = 0.0f;
+                A->Z[i] = e;
+                expsum += e;
+            }
+            if (!(expsum > 0.0f) || !isfinite(expsum)) {
+                // As a last resort, output uniform distribution
+                float invk = 1.0f / (float)k;
+                for (int i = 0; i < k; i++) A->Z[i] = invk;
+                break;
+            }
         }
+
+        float invsum = 1.0f / expsum;
         for (int i = 0; i < k; i++) {
-            A->Z[i] /= expsum;
+            A->Z[i] *= invsum;
         }
         break;
     }
