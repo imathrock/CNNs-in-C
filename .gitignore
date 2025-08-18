@@ -5,3 +5,4 @@ Refactoring Guidelines.txt
 dataloaders/idx-file-parser.o
 .vscode
 avxtest.c
+SIMD-TEST.c

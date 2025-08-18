@@ -233,13 +233,26 @@ void Free_DenseLayer(DenseLayer*DL){
 
 /// @brief init the activations struct that bundles required buffers
 /// @param size 
+/// @param batchsize 
 /// @return 
-activations*init_activations(int size){
+activations*init_activations(int size,int batchsize,norm_type_t norm){
     activations*act = malloc(sizeof(activations));
     act->size = size;
     act->Z = calloc(size,sizeof(float));
     act->gprime = calloc(size,sizeof(float));
     act->dZ = calloc(size,sizeof(float));
+    act->norm_type = norm;
+    switch (norm) {
+        case NormNone:
+            act->norm_params.rawdog = NULL;
+            break;
+        case BatchNorm:
+            act->norm_params.BN = init_batchnorm(batchsize, size);
+            break;
+        case LayerNorm:
+            act->norm_params.LN = init_layernorm(size);
+            break;
+    }
     return act;
 }
 
@@ -249,7 +262,72 @@ void Free_activations(activations*A){
     free(A->Z);
     free(A->gprime);
     free(A->dZ);
+    switch (A->norm_type) {
+         case BatchNorm:
+             free_batchnorm(A->norm_params.BN);
+             break;
+         case LayerNorm:
+             free_layernorm(A->norm_params.LN);
+             break;
+         default:
+             break;
+     }
     free(A);
+}
+
+/// @brief Initializes Batchnormalization struct
+/// @param batch_size 
+/// @param num_features 
+/// @return 
+batchnorm_t* init_batchnorm(int batch_size, int num_features) {
+    batchnorm_t* BN = (batchnorm_t*)malloc(sizeof(batchnorm_t));
+    if (!BN) return NULL;
+    BN->batch_size = batch_size;
+    BN->num_features = num_features;
+    BN->mean    = (float*)calloc(num_features, sizeof(float));
+    BN->var     = (float*)calloc(num_features, sizeof(float));
+    BN->gamma   = (float*)malloc(num_features * sizeof(float));
+    BN->beta    = (float*)calloc(num_features, sizeof(float));
+    BN->dgamma  = (float*)calloc(num_features, sizeof(float));
+    BN->dbeta   = (float*)calloc(num_features, sizeof(float));
+    BN->x_hat   = (float*)malloc(batch_size * num_features * sizeof(float));
+    // init gamma to 1.0
+    for (int i = 0; i < num_features; i++) BN->gamma[i] = 1.0f;
+    return BN;
+}
+
+/// @brief 
+/// @param BN 
+void free_batchnorm(batchnorm_t* BN) {
+    if (!BN) return;
+    free(BN->mean);
+    free(BN->var);
+    free(BN->gamma);
+    free(BN->beta);
+    free(BN->dgamma);
+    free(BN->dbeta);
+    free(BN->x_hat);
+    free(BN);
+}
+
+layernorm_t*init_layernorm(int num_features){
+    BN->gamma   = (float*)malloc(num_features * sizeof(float));
+    BN->beta    = (float*)calloc(num_features, sizeof(float));
+    BN->dgamma  = (float*)calloc(num_features, sizeof(float));
+    BN->dbeta   = (float*)calloc(num_features, sizeof(float));
+    // init gamma to 1.0
+    for (int i = 0; i < num_features; i++) BN->gamma[i] = 1.0f;
+}
+
+/// @brief 
+/// @param LN
+void free_layernorm(layernorm_t*LN) {
+    if (!LN) return;
+    free(LN->gamma);
+    free(LN->beta);
+    free(LN->dgamma);
+    free(LN->dbeta);
+    free(LN);
 }
 
 /// @brief inline function that prevents overflow in exp
@@ -686,6 +764,10 @@ float loss_function(activations*A, loss_func_t func, int k){
     return loss;
 }
 
+void BatchNorm_Forward_Tr(activations*A,DenseLayer*L){
+
+}
+
 /// @brief Efficient Forward prop function with AVX2 intrinsics.
 /// @param A1 Previous activation
 /// @param L Layer with weights and biases
@@ -768,20 +850,17 @@ void back_propogate_step(activations*A1,DenseLayer*L,activations* A2){
 /// @brief Gradient Accumulator
 /// @param L 
 /// @param LR 
-void grad_accum(DenseLayer* L, float LR) {
-    __m256 LR_vec = _mm256_set1_ps(LR);
-
+void grad_accum(DenseLayer* L) {
     // Accumulate biases
     int i = 0;
     for (; i + 7 < L->rows; i += 8) {
         __m256 grad = _mm256_loadu_ps(&L->param_grad->biases[i]);
         __m256 acc = _mm256_loadu_ps(&L->param_grad_sum->biases[i]);
-        __m256 scaled = _mm256_mul_ps(LR_vec, grad);
-        acc = _mm256_add_ps(acc, scaled);
+        acc = _mm256_add_ps(acc, grad);
         _mm256_storeu_ps(&L->param_grad_sum->biases[i], acc);
     }
     for (; i < L->rows; i++) {
-        L->param_grad_sum->biases[i] += LR * L->param_grad->biases[i];
+        L->param_grad_sum->biases[i] += L->param_grad->biases[i];
     }
 
     // Accumulate weights
@@ -790,12 +869,11 @@ void grad_accum(DenseLayer* L, float LR) {
         for (; j + 7 < L->cols; j += 8) {
             __m256 grad = _mm256_loadu_ps(&L_WEIGHT(L->param_grad, i, j, L->cols));
             __m256 acc = _mm256_loadu_ps(&L_WEIGHT(L->param_grad_sum, i, j, L->cols));
-            __m256 scaled = _mm256_mul_ps(LR_vec, grad);
-            acc = _mm256_add_ps(acc, scaled);
+            acc = _mm256_add_ps(acc, grad);
             _mm256_storeu_ps(&L_WEIGHT(L->param_grad_sum, i, j, L->cols), acc);
         }
         for (; j < L->cols; j++) {
-            L_WEIGHT(L->param_grad_sum, i, j, L->cols) += LR * L_WEIGHT(L->param_grad, i, j, L->cols);
+            L_WEIGHT(L->param_grad_sum, i, j, L->cols) += L_WEIGHT(L->param_grad, i, j, L->cols);
         }
     }
 }
@@ -872,7 +950,7 @@ int get_pred_from_softmax(activations *A) {
 
 /// @brief Standardizes the activations
 /// @param A 
-void StandardizeActivations(activations *A){
+void LayerNorm(activations *A){
     float sum = 0.0f;
     __m256 sumvec = _mm256_setzero_ps();
     int i;
