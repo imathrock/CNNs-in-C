@@ -282,8 +282,7 @@ void Free_activations(activations*A){
 batchnorm_t* init_batchnorm(int batch_size, int num_features) {
     batchnorm_t* BN = (batchnorm_t*)malloc(sizeof(batchnorm_t));
     if (!BN) return NULL;
-    BN->batch_size = batch_size;
-    BN->num_features = num_features;
+    BN->batch_size = batch_size; BN->num_features = num_features; BN->count = 0;
     BN->mean    = (float*)calloc(num_features, sizeof(float));
     BN->var     = (float*)calloc(num_features, sizeof(float));
     BN->gamma   = (float*)malloc(num_features * sizeof(float));
@@ -311,12 +310,15 @@ void free_batchnorm(batchnorm_t* BN) {
 }
 
 layernorm_t*init_layernorm(int num_features){
-    BN->gamma   = (float*)malloc(num_features * sizeof(float));
-    BN->beta    = (float*)calloc(num_features, sizeof(float));
-    BN->dgamma  = (float*)calloc(num_features, sizeof(float));
-    BN->dbeta   = (float*)calloc(num_features, sizeof(float));
+    layernorm_t*LN = (layernorm_t*)malloc(sizeof(layernorm_t));
+    LN->num_features = num_features;
+    LN->gamma   = (float*)malloc(num_features * sizeof(float));
+    LN->beta    = (float*)calloc(num_features, sizeof(float));
+    LN->dgamma  = (float*)calloc(num_features, sizeof(float));
+    LN->dbeta   = (float*)calloc(num_features, sizeof(float));
     // init gamma to 1.0
-    for (int i = 0; i < num_features; i++) BN->gamma[i] = 1.0f;
+    for (int i = 0; i < num_features; i++) LN->gamma[i] = 1.0f;
+    return LN;
 }
 
 /// @brief 
@@ -328,6 +330,25 @@ void free_layernorm(layernorm_t*LN) {
     free(LN->dgamma);
     free(LN->dbeta);
     free(LN);
+}
+
+/// @brief Batchnorm function
+/// @param A 
+void batchnorm(activations*A){
+    if(A->norm_params.BN->count > A->norm_params.BN->batch_size){perror("Batchnorm error, count not reset properly"); exit(1);}
+    if(A->norm_params.BN->count == A->norm_params.BN->batch_size){
+        A->norm_params.BN->count = 0; 
+        // calculate new mean, scale and shift the whole xhat for backprop
+
+        memset(A->norm_params.BN->dgamma,0,sizeof(int)*A->norm_params.BN->num_features);
+        memset(A->norm_params.BN->dbeta,0,sizeof(int)*A->norm_params.BN->num_features);
+    }
+    // normalize with the current mean. 
+    A->norm_params.BN->count++;
+}
+
+void layernorm(activations*A){
+
 }
 
 /// @brief inline function that prevents overflow in exp
@@ -348,6 +369,18 @@ static inline float gelu_approx(float x){
 /// @param A Activations struct
 /// @param func act func, default identity.
 void activation_function(activations*A,act_func_t func){
+    // Use the activation norm type to apply relevant normalization. 
+    switch (A->norm_type)
+    {
+    case BatchNorm:
+        batchnorm(A);
+        break;
+    case LayerNorm:
+        layernorm(A)
+        break;
+    default:
+        break;
+    }
     switch (func){
     case ReLU: {
         __m256 zeros = _mm256_setzero_ps();
@@ -366,8 +399,7 @@ void activation_function(activations*A,act_func_t func){
             else {A->gprime[i] = 1;}
         }
         
-    }
-    break;
+        }
         break;
 
     case Sigmoid:
@@ -764,10 +796,6 @@ float loss_function(activations*A, loss_func_t func, int k){
     return loss;
 }
 
-void BatchNorm_Forward_Tr(activations*A,DenseLayer*L){
-
-}
-
 /// @brief Efficient Forward prop function with AVX2 intrinsics.
 /// @param A1 Previous activation
 /// @param L Layer with weights and biases
@@ -950,7 +978,7 @@ int get_pred_from_softmax(activations *A) {
 
 /// @brief Standardizes the activations
 /// @param A 
-void LayerNorm(activations *A){
+void layernorm(activations *A){
     float sum = 0.0f;
     __m256 sumvec = _mm256_setzero_ps();
     int i;

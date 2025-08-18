@@ -57,6 +57,7 @@ typedef struct{
 
 // Batchnorm struct
 typedef struct{
+    int count;
     int batch_size;
     int num_features;
     float*mean; // [features]
@@ -70,6 +71,7 @@ typedef struct{
 
 // Layernorm struct
 typedef struct{
+    int num_features;
     float*gamma;// [features]
     float*beta;// [features]
     float*dgamma;// [features]
@@ -88,7 +90,6 @@ typedef struct{
         layernorm_t*LN;
         void*rawdog;
     } norm_params;
-    
 }activations;
 
 // Initializes a layer struct with guards in place to prevent memory leak.
@@ -104,7 +105,7 @@ DenseLayer*init_DenseLayer(int rows,int cols,int init_type);
 void Free_DenseLayer(DenseLayer*DL);
 
 // activations init func
-activations*init_activations(int size,int batchsize);
+activations*init_activations(int size,int batchsize,norm_type_t norm);
 
 // activations finalizer
 void Free_activations(activations*A);
@@ -113,7 +114,15 @@ batchnorm_t* init_batchnorm(int batch_size, int num_features);
 
 void free_batchnorm(batchnorm_t* BN);
 
-void BatchNorm_Forward_Tr(activations*A,DenseLayer*L);
+layernorm_t*init_layernorm(int num_features);
+
+void free_layernorm(layernorm_t*LN);
+
+// Batch normalizer. 
+void batchnorm(activations*A);
+
+// test Layernorm
+void layernorm(activations *A);
 
 // Efficient Forward prop function.
 void activation_function(activations*A,act_func_t func);
@@ -137,9 +146,6 @@ void zero_grad(DenseLayer*L);
 
 // Gets the largest activation value and returns it.
 int get_pred_from_softmax(activations *A);
-
-// test StandardizeActivations
-void LayerNorm(activations *A);
 
 // Shows the image at kth index.
 void show_image(struct pixel_data* pixel_data, int k);

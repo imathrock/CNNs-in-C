@@ -46,11 +46,11 @@ int main(){
     int lay3 = 64;    
     int lay4 = 10;
 
-    activations*A1 = init_activations(lay1);
-    activations*A2 = init_activations(lay2);
-    activations*A3 = init_activations(lay3);  
-    activations*A4 = init_activations(lay4);   
-    
+    activations*A1 = init_activations(lay1,BATCH_SIZE,LayerNorm);
+    activations*A2 = init_activations(lay2,BATCH_SIZE,LayerNorm);
+    activations*A3 = init_activations(lay3,BATCH_SIZE,LayerNorm);
+    activations*A4 = init_activations(lay4,BATCH_SIZE,NormNone);
+    printf("Layernorm existence test num features: %i\n",A3->norm_params.LN->num_features);
     // Layer init
     DenseLayer*L1 = init_DenseLayer(lay2,lay1,5);
     DenseLayer*L2 = init_DenseLayer(lay3,lay2,5);
@@ -90,13 +90,10 @@ int main(){
                     memcpy(A1->Z + i * imgsize, Poolimg[i].Data, imgsize * sizeof(float));
                 }
                 // Forward
-                BatchNorm_Forward_Tr(A1,L1);
                 activation_function(A1, ReLU);
                 forward_prop_step(A1, L1, A2);
-                BatchNorm_Forward_Tr(A2,L2);
                 activation_function(A2, ReLU);
                 forward_prop_step(A2, L2, A3);
-                BatchNorm_Forward_Tr(A3,L3);
                 activation_function(A3, ReLU);
                 forward_prop_step(A3, L3, A4);
                 activation_function(A4, Softmax);
