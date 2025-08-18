@@ -10,6 +10,7 @@
 
 #define L_WEIGHT(L, i, j, cols)  (L->Weights[((i) * cols) + (j)])
 #define L_WEIGHT_T(L, i, j, rows)  (L->Weights_T[((i) * rows) + (j)])
+#define BN_ACT(BN,i,j) (BN->x_hat[(i)*BN->num_features+(j)])
 
 /// @brief Box Muller transform, computes random number on mean=0 and var=1 spectrum. Generates 2 numbers, returns spare on second call.
 /// @return random number
@@ -332,23 +333,184 @@ void free_layernorm(layernorm_t*LN) {
     free(LN);
 }
 
+// /// @brief Batchnorm function
+// /// @param A 
+// void batchnorm(activations*A){
+//     batchnorm_t*BN = A->norm_params.BN;
+//     int batch_size = BN->batch_size;
+//     int num_features = BN->num_features;
+//     if(BN->count > batch_size){perror("Batchnorm error, count not reset properly"); exit(1);}
+    
+//     if(BN->count == batch_size){
+//         __m256 inv_batch = _mm256_set1_ps(1.0f/batch_size);
+        
+//         for(int j = 0; j < num_features; j++){
+//             // Reset accumulators
+//             BN->mean[j] = 0.0f;
+//             BN->var[j] = 0.0f;
+            
+//             // Calculate mean using AVX
+//             __m256 sum_vec = _mm256_setzero_ps();
+//             int i = 0;
+//             for(; i + 7 < batch_size; i += 8){
+//                 __m256 batch_vals = _mm256_loadu_ps(&BN_ACT(BN,i,j));
+//                 sum_vec = _mm256_add_ps(sum_vec, batch_vals);
+//             }
+//             // Reduce vector sum
+//             __m128 sum128 = _mm_add_ps(_mm256_castps256_ps128(sum_vec),
+//                                       _mm256_extractf128_ps(sum_vec, 1));
+//             sum128 = _mm_hadd_ps(sum128, sum128);
+//             sum128 = _mm_hadd_ps(sum128, sum128);
+//             float sum = _mm_cvtss_f32(sum128);
+            
+//             // Handle remaining elements
+//             for(; i < batch_size; i++){
+//                 sum += BN_ACT(BN,i,j);
+//             }
+//             BN->mean[j] = sum/batch_size;
+
+//             // Calculate variance with AVX
+//             sum_vec = _mm256_setzero_ps();
+//             __m256 mean_vec = _mm256_set1_ps(BN->mean[j]);
+//             i = 0;
+//             for(; i + 7 < batch_size; i += 8){
+//                 __m256 vals = _mm256_loadu_ps(&BN_ACT(BN,i,j));
+//                 __m256 diff = _mm256_sub_ps(vals, mean_vec);
+//                 sum_vec = _mm256_add_ps(sum_vec, _mm256_mul_ps(diff, diff));
+//             }
+//             sum128 = _mm_add_ps(_mm256_castps256_ps128(sum_vec),
+//                                _mm256_extractf128_ps(sum_vec, 1));
+//             sum128 = _mm_hadd_ps(sum128, sum128);
+//             sum128 = _mm_hadd_ps(sum128, sum128);
+//             sum = _mm_cvtss_f32(sum128);
+            
+//             // Handle remaining elements
+//             for(; i < batch_size; i++){
+//                 float diff = BN_ACT(BN,i,j) - BN->mean[j];
+//                 sum += diff * diff;
+//             }
+//             BN->var[j] = sum/batch_size + 1e-9f;
+
+//             // Normalize and apply scale/shift
+//             float std = sqrtf(BN->var[j]);
+//             __m256 std_vec = _mm256_set1_ps(std);
+//             __m256 gamma_vec = _mm256_set1_ps(BN->gamma[j]);
+//             __m256 beta_vec = _mm256_set1_ps(BN->beta[j]);
+            
+//             i = 0;
+//             for(; i + 7 < batch_size; i += 8){
+//                 __m256 x = _mm256_loadu_ps(&BN_ACT(BN,i,j));
+//                 __m256 xhat = _mm256_div_ps(_mm256_sub_ps(x, mean_vec), std_vec);
+//                 __m256 y = _mm256_add_ps(_mm256_mul_ps(gamma_vec, xhat), beta_vec);
+//                 _mm256_storeu_ps(&BN_ACT(BN,i,j), y);
+//             }
+//             for(; i < batch_size; i++){
+//                 float xhat = (BN_ACT(BN,i,j) - BN->mean[j]) / std;
+//                 BN_ACT(BN,i,j) = BN->gamma[j] * xhat + BN->beta[j];
+//             }
+//         }
+//         memset(BN->dgamma, 0, sizeof(float) * num_features);
+//         memset(BN->dbeta, 0, sizeof(float) * num_features);
+//         BN->count = 0;
+//     }
+//     else{
+//         memcpy(BN->x_hat + BN->count * num_features, A->Z, sizeof(float) * num_features);
+//         BN->count++;
+//     }
+// }
+
 /// @brief Batchnorm function
 /// @param A 
 void batchnorm(activations*A){
-    if(A->norm_params.BN->count > A->norm_params.BN->batch_size){perror("Batchnorm error, count not reset properly"); exit(1);}
-    if(A->norm_params.BN->count == A->norm_params.BN->batch_size){
-        A->norm_params.BN->count = 0; 
+    batchnorm_t*BN = A->norm_params.BN;
+    int batch_size = BN->batch_size;
+    int num_features = BN->num_features;
+    if(BN->count > batch_size){perror("Batchnorm error, count not reset properly"); exit(1);}
+    if(BN->count == batch_size){
         // calculate new mean, scale and shift the whole xhat for backprop
-
-        memset(A->norm_params.BN->dgamma,0,sizeof(int)*A->norm_params.BN->num_features);
-        memset(A->norm_params.BN->dbeta,0,sizeof(int)*A->norm_params.BN->num_features);
+        for(int j = 0; j < num_features; j++){
+            BN->mean[j] = 0.0f; BN->var[j] = 0.0f;
+            // mean
+            for(int i = 0; i < batch_size; i++){ BN->mean[j] += BN_ACT(BN,i,j); }
+            BN->mean[j] /= (float)batch_size;
+            // var
+            for(int i = 0; i < batch_size; i++){ BN->var[j] += (BN_ACT(BN,i,j) - BN->mean[j])*(BN_ACT(BN,i,j) - BN->mean[j]);}
+            BN->var[j] /= (float)batch_size;
+            BN->var[j] += 1e-9;
+        }
+        for (int i = 0; i < batch_size; i++){
+            int j = 0;
+            for (; j+7 < num_features; j+=8){
+                __m256 bnact = _mm256_loadu_ps(&BN_ACT(BN,i,j));
+                __m256 gammavec = _mm256_loadu_ps(&BN->gamma[j]);
+                __m256 betavec = _mm256_loadu_ps(&BN->beta[j]);
+                __m256 meanvec = _mm256_loadu_ps(&BN->mean[j]);
+                __m256 varvec = _mm256_loadu_ps(&BN->var[j]);
+                bnact = _mm256_sub_ps(bnact,meanvec);
+                varvec = _mm256_sqrt_ps(varvec);
+                bnact = _mm256_div_ps(bnact,varvec);
+                bnact = _mm256_add_ps(_mm256_mul_ps(bnact,gammavec),betavec);
+                _mm256_storeu_ps(&BN_ACT(BN,i,j),bnact);
+            }
+            for (; j < num_features; j++){
+                BN_ACT(BN,i,j) = BN->gamma[j] * ((BN_ACT(BN,i,j) - BN->mean[j])/sqrtf(BN->var[j])) + BN->beta[j];
+            }
+        }
+        memset(A->norm_params.BN->dgamma,0,sizeof(float)*A->norm_params.BN->num_features);
+        memset(A->norm_params.BN->dbeta,0,sizeof(float)*A->norm_params.BN->num_features);
+        BN->count = 0; 
     }
-    // normalize with the current mean. 
-    A->norm_params.BN->count++;
+    else{
+        memcpy(A->norm_params.BN->x_hat + BN->count * BN->num_features,A->Z, sizeof(float) * BN->num_features);
+        A->norm_params.BN->count++;
+    }
 }
 
-void layernorm(activations*A){
-
+/// @brief Standardizes the activations
+/// @param A 
+void layernorm(activations *A){
+    float sum = 0.0f;
+    __m256 sumvec = _mm256_setzero_ps();
+    int i;
+    for (i = 0; i+7 < A->size; i+=8){
+        __m256 actvec = _mm256_loadu_ps(&A->Z[i]);
+        sumvec = _mm256_add_ps(sumvec,actvec);
+    }
+    __m128 bottom = _mm256_castps256_ps128(sumvec);
+    __m128 top = _mm256_extractf128_ps(sumvec,1);
+    bottom = _mm_add_ps(top,bottom);
+    bottom = _mm_hadd_ps(bottom,bottom);
+    bottom = _mm_hadd_ps(bottom,bottom);
+    sum = _mm_cvtss_f32(bottom);
+    for (; i < A->size; i++) sum += A->Z[i];
+    float mean = sum/A->size;
+    float var = 0.0f;
+    __m256 meanvec = _mm256_set1_ps(mean);
+    __m256 varvec = _mm256_setzero_ps();
+    i = 0;
+    for(; i+7 < A->size; i+=8){
+        __m256 actvec = _mm256_loadu_ps(&A->Z[i]);
+        varvec = _mm256_sub_ps(actvec,meanvec);
+        varvec = _mm256_mul_ps(varvec,varvec);
+    }
+    bottom = _mm256_castps256_ps128(varvec);
+    top = _mm256_extractf128_ps(varvec,1);
+    bottom = _mm_add_ps(top,bottom);
+    bottom = _mm_hadd_ps(bottom,bottom);
+    bottom = _mm_hadd_ps(bottom,bottom);
+    var = _mm_cvtss_f32(bottom);
+    for(; i < A->size; i++) var += pow(A->Z[i]-mean,2);
+    var /= A->size;
+    var = sqrtf(var) + 1e-9;
+    varvec = _mm256_set1_ps(var);
+    i = 0;
+    for(; i+7 < A->size; i+=8){
+        __m256 actvec = _mm256_loadu_ps(&A->Z[i]);
+        actvec = _mm256_sub_ps(actvec, meanvec);
+        actvec = _mm256_div_ps(actvec,varvec);
+        _mm256_storeu_ps(&A->Z[i],actvec);
+    }
+    for(;i < A->size; i++) A->Z[i] /= var;
 }
 
 /// @brief inline function that prevents overflow in exp
@@ -376,7 +538,7 @@ void activation_function(activations*A,act_func_t func){
         batchnorm(A);
         break;
     case LayerNorm:
-        layernorm(A)
+        layernorm(A);
         break;
     default:
         break;
@@ -976,52 +1138,6 @@ int get_pred_from_softmax(activations *A) {
     return max_index;
 }
 
-/// @brief Standardizes the activations
-/// @param A 
-void layernorm(activations *A){
-    float sum = 0.0f;
-    __m256 sumvec = _mm256_setzero_ps();
-    int i;
-    for (i = 0; i+7 < A->size; i+=8){
-        __m256 actvec = _mm256_loadu_ps(&A->Z[i]);
-        sumvec = _mm256_add_ps(sumvec,actvec);
-    }
-    __m128 bottom = _mm256_castps256_ps128(sumvec);
-    __m128 top = _mm256_extractf128_ps(sumvec,1);
-    bottom = _mm_add_ps(top,bottom);
-    bottom = _mm_hadd_ps(bottom,bottom);
-    bottom = _mm_hadd_ps(bottom,bottom);
-    sum = _mm_cvtss_f32(bottom);
-    for (; i < A->size; i++) sum += A->Z[i];
-    float mean = sum/A->size;
-    float var = 0.0f;
-    __m256 meanvec = _mm256_set1_ps(mean);
-    __m256 varvec = _mm256_setzero_ps();
-    i = 0;
-    for(; i+7 < A->size; i+=8){
-        __m256 actvec = _mm256_loadu_ps(&A->Z[i]);
-        varvec = _mm256_sub_ps(actvec,meanvec);
-        varvec = _mm256_mul_ps(varvec,varvec);
-    }
-    bottom = _mm256_castps256_ps128(varvec);
-    top = _mm256_extractf128_ps(varvec,1);
-    bottom = _mm_add_ps(top,bottom);
-    bottom = _mm_hadd_ps(bottom,bottom);
-    bottom = _mm_hadd_ps(bottom,bottom);
-    var = _mm_cvtss_f32(bottom);
-    for(; i < A->size; i++) var += pow(A->Z[i]-mean,2);
-    var /= A->size;
-    var = sqrt(var) + 0.00000001;
-    varvec = _mm256_set1_ps(var);
-    i = 0;
-    for(; i+7 < A->size; i+=8){
-        __m256 actvec = _mm256_loadu_ps(&A->Z[i]);
-        actvec = _mm256_sub_ps(actvec, meanvec);
-        actvec = _mm256_div_ps(actvec,varvec);
-        _mm256_storeu_ps(&A->Z[i],actvec);
-    }
-    for(;i < A->size; i++) A->Z[i] /= var;
-}
 
 // /// @brief Prints out activation values for debugging
 // /// @param A 

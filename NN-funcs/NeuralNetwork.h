@@ -66,7 +66,7 @@ typedef struct{
     float*beta;// [features]
     float*dgamma;// [features]
     float*dbeta;// [features]
-    float*x_hat;// [features*batch_size]
+    float*x_hat;// [features*batch_size] Row major, each row a layer
 }batchnorm_t;
 
 // Layernorm struct
