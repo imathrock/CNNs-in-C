@@ -10,7 +10,7 @@
 
 #define L_WEIGHT(L, i, j, cols)  (L->Weights[((i) * cols) + (j)])
 #define L_WEIGHT_T(L, i, j, rows)  (L->Weights_T[((i) * rows) + (j)])
-#define BN_ACT(BN,i,j) (BN->x_hat[(i)*BN->num_features+(j)])
+#define ACT_BN(A,i,j) (A->raw[(i)*(A->size)+(j)])
 
 /// @brief Box Muller transform, computes random number on mean=0 and var=1 spectrum. Generates 2 numbers, returns spare on second call.
 /// @return random number
@@ -237,20 +237,34 @@ void Free_DenseLayer(DenseLayer*DL){
 /// @param batchsize 
 /// @return 
 activations*init_activations(int size,int batchsize,norm_type_t norm){
+    // Need to DRY this code
     activations*act = malloc(sizeof(activations));
-    act->size = size;
-    act->Z = calloc(size,sizeof(float));
-    act->gprime = calloc(size,sizeof(float));
-    act->dZ = calloc(size,sizeof(float));
     act->norm_type = norm;
     switch (norm) {
         case NormNone:
             act->norm_params.rawdog = NULL;
+            act->raw = NULL;// uhh is this okay? 
+            act->Z = calloc(size,sizeof(float));
+            act->gprime = calloc(size,sizeof(float));
+            act->dZ = calloc(size,sizeof(float));
+            act->batch_size = 0;
+            act->size = size;
             break;
         case BatchNorm:
-            act->norm_params.BN = init_batchnorm(batchsize, size);
+            act->raw = calloc(size*batchsize,sizeof(float));     
+            act->Z = calloc(size*batchsize,sizeof(float));
+            act->gprime = calloc(size*batchsize,sizeof(float));
+            act->dZ = calloc(size*batchsize,sizeof(float));
+            act->batch_size = batchsize;
+            act->size = size;
+            act->norm_params.BN = init_batchnorm(size);
             break;
         case LayerNorm:
+            act->raw = NULL; // not sure if good idea, Yo Future atharv bro check and lemme know. 
+            act->Z = calloc(size,sizeof(float));
+            act->gprime = calloc(size,sizeof(float));
+            act->dZ = calloc(size,sizeof(float));
+            act->batch_size = 0;
             act->norm_params.LN = init_layernorm(size);
             break;
     }
@@ -280,17 +294,16 @@ void Free_activations(activations*A){
 /// @param batch_size 
 /// @param num_features 
 /// @return 
-batchnorm_t* init_batchnorm(int batch_size, int num_features) {
+batchnorm_t* init_batchnorm(int num_features) {
     batchnorm_t* BN = (batchnorm_t*)malloc(sizeof(batchnorm_t));
     if (!BN) return NULL;
-    BN->batch_size = batch_size; BN->num_features = num_features; BN->count = 0;
+    BN->count = 0;
     BN->mean    = (float*)calloc(num_features, sizeof(float));
     BN->var     = (float*)calloc(num_features, sizeof(float));
-    BN->gamma   = (float*)malloc(num_features * sizeof(float));
+    BN->gamma   = (float*)calloc(num_features, sizeof(float));
     BN->beta    = (float*)calloc(num_features, sizeof(float));
     BN->dgamma  = (float*)calloc(num_features, sizeof(float));
     BN->dbeta   = (float*)calloc(num_features, sizeof(float));
-    BN->x_hat   = (float*)malloc(batch_size * num_features * sizeof(float));
     // init gamma to 1.0
     for (int i = 0; i < num_features; i++) BN->gamma[i] = 1.0f;
     return BN;
@@ -306,7 +319,6 @@ void free_batchnorm(batchnorm_t* BN) {
     free(BN->beta);
     free(BN->dgamma);
     free(BN->dbeta);
-    free(BN->x_hat);
     free(BN);
 }
 
@@ -333,137 +345,41 @@ void free_layernorm(layernorm_t*LN) {
     free(LN);
 }
 
-// /// @brief Batchnorm function
-// /// @param A 
-// void batchnorm(activations*A){
-//     batchnorm_t*BN = A->norm_params.BN;
-//     int batch_size = BN->batch_size;
-//     int num_features = BN->num_features;
-//     if(BN->count > batch_size){perror("Batchnorm error, count not reset properly"); exit(1);}
-    
-//     if(BN->count == batch_size){
-//         __m256 inv_batch = _mm256_set1_ps(1.0f/batch_size);
-        
-//         for(int j = 0; j < num_features; j++){
-//             // Reset accumulators
-//             BN->mean[j] = 0.0f;
-//             BN->var[j] = 0.0f;
-            
-//             // Calculate mean using AVX
-//             __m256 sum_vec = _mm256_setzero_ps();
-//             int i = 0;
-//             for(; i + 7 < batch_size; i += 8){
-//                 __m256 batch_vals = _mm256_loadu_ps(&BN_ACT(BN,i,j));
-//                 sum_vec = _mm256_add_ps(sum_vec, batch_vals);
-//             }
-//             // Reduce vector sum
-//             __m128 sum128 = _mm_add_ps(_mm256_castps256_ps128(sum_vec),
-//                                       _mm256_extractf128_ps(sum_vec, 1));
-//             sum128 = _mm_hadd_ps(sum128, sum128);
-//             sum128 = _mm_hadd_ps(sum128, sum128);
-//             float sum = _mm_cvtss_f32(sum128);
-            
-//             // Handle remaining elements
-//             for(; i < batch_size; i++){
-//                 sum += BN_ACT(BN,i,j);
-//             }
-//             BN->mean[j] = sum/batch_size;
-
-//             // Calculate variance with AVX
-//             sum_vec = _mm256_setzero_ps();
-//             __m256 mean_vec = _mm256_set1_ps(BN->mean[j]);
-//             i = 0;
-//             for(; i + 7 < batch_size; i += 8){
-//                 __m256 vals = _mm256_loadu_ps(&BN_ACT(BN,i,j));
-//                 __m256 diff = _mm256_sub_ps(vals, mean_vec);
-//                 sum_vec = _mm256_add_ps(sum_vec, _mm256_mul_ps(diff, diff));
-//             }
-//             sum128 = _mm_add_ps(_mm256_castps256_ps128(sum_vec),
-//                                _mm256_extractf128_ps(sum_vec, 1));
-//             sum128 = _mm_hadd_ps(sum128, sum128);
-//             sum128 = _mm_hadd_ps(sum128, sum128);
-//             sum = _mm_cvtss_f32(sum128);
-            
-//             // Handle remaining elements
-//             for(; i < batch_size; i++){
-//                 float diff = BN_ACT(BN,i,j) - BN->mean[j];
-//                 sum += diff * diff;
-//             }
-//             BN->var[j] = sum/batch_size + 1e-9f;
-
-//             // Normalize and apply scale/shift
-//             float std = sqrtf(BN->var[j]);
-//             __m256 std_vec = _mm256_set1_ps(std);
-//             __m256 gamma_vec = _mm256_set1_ps(BN->gamma[j]);
-//             __m256 beta_vec = _mm256_set1_ps(BN->beta[j]);
-            
-//             i = 0;
-//             for(; i + 7 < batch_size; i += 8){
-//                 __m256 x = _mm256_loadu_ps(&BN_ACT(BN,i,j));
-//                 __m256 xhat = _mm256_div_ps(_mm256_sub_ps(x, mean_vec), std_vec);
-//                 __m256 y = _mm256_add_ps(_mm256_mul_ps(gamma_vec, xhat), beta_vec);
-//                 _mm256_storeu_ps(&BN_ACT(BN,i,j), y);
-//             }
-//             for(; i < batch_size; i++){
-//                 float xhat = (BN_ACT(BN,i,j) - BN->mean[j]) / std;
-//                 BN_ACT(BN,i,j) = BN->gamma[j] * xhat + BN->beta[j];
-//             }
-//         }
-//         memset(BN->dgamma, 0, sizeof(float) * num_features);
-//         memset(BN->dbeta, 0, sizeof(float) * num_features);
-//         BN->count = 0;
-//     }
-//     else{
-//         memcpy(BN->x_hat + BN->count * num_features, A->Z, sizeof(float) * num_features);
-//         BN->count++;
-//     }
-// }
-
 /// @brief Batchnorm function
 /// @param A 
 void batchnorm(activations*A){
     batchnorm_t*BN = A->norm_params.BN;
-    int batch_size = BN->batch_size;
-    int num_features = BN->num_features;
-    if(BN->count > batch_size){perror("Batchnorm error, count not reset properly"); exit(1);}
-    if(BN->count == batch_size){
-        // calculate new mean, scale and shift the whole xhat for backprop
-        for(int j = 0; j < num_features; j++){
-            BN->mean[j] = 0.0f; BN->var[j] = 0.0f;
-            // mean
-            for(int i = 0; i < batch_size; i++){ BN->mean[j] += BN_ACT(BN,i,j); }
-            BN->mean[j] /= (float)batch_size;
-            // var
-            for(int i = 0; i < batch_size; i++){ BN->var[j] += (BN_ACT(BN,i,j) - BN->mean[j])*(BN_ACT(BN,i,j) - BN->mean[j]);}
-            BN->var[j] /= (float)batch_size;
-            BN->var[j] += 1e-9;
+    float invbatch = 1.0f / A->batch_size;
+    for(int i = 0; i < A->size; i++){
+        for (int j = 0; j < A->batch_size; j++){
+            BN->mean[i] += ACT_BN(A,j,i);
         }
-        for (int i = 0; i < batch_size; i++){
-            int j = 0;
-            for (; j+7 < num_features; j+=8){
-                __m256 bnact = _mm256_loadu_ps(&BN_ACT(BN,i,j));
-                __m256 gammavec = _mm256_loadu_ps(&BN->gamma[j]);
-                __m256 betavec = _mm256_loadu_ps(&BN->beta[j]);
-                __m256 meanvec = _mm256_loadu_ps(&BN->mean[j]);
-                __m256 varvec = _mm256_loadu_ps(&BN->var[j]);
-                bnact = _mm256_sub_ps(bnact,meanvec);
-                varvec = _mm256_sqrt_ps(varvec);
-                bnact = _mm256_div_ps(bnact,varvec);
-                bnact = _mm256_add_ps(_mm256_mul_ps(bnact,gammavec),betavec);
-                _mm256_storeu_ps(&BN_ACT(BN,i,j),bnact);
-            }
-            for (; j < num_features; j++){
-                BN_ACT(BN,i,j) = BN->gamma[j] * ((BN_ACT(BN,i,j) - BN->mean[j])/sqrtf(BN->var[j])) + BN->beta[j];
-            }
+        BN->mean[i] *= invbatch;
+    }
+    for(int i = 0; i < A->size; i++){
+        for (int j = 0; j < A->batch_size; j++){
+            BN->var[i] += (ACT_BN(A,j,i) - BN->mean[i])*(ACT_BN(A,j,i) - BN->mean[i]);
         }
-        memset(A->norm_params.BN->dgamma,0,sizeof(float)*A->norm_params.BN->num_features);
-        memset(A->norm_params.BN->dbeta,0,sizeof(float)*A->norm_params.BN->num_features);
-        BN->count = 0; 
     }
-    else{
-        memcpy(A->norm_params.BN->x_hat + BN->count * BN->num_features,A->Z, sizeof(float) * BN->num_features);
-        A->norm_params.BN->count++;
+    __m256 invbatcvec = _mm256_set1_ps(invbatch);
+    int i = 0;
+    for (; i+7 < A->size; i+=8){
+        __m256 varvec = _mm256_loadu_ps(&BN->var[i]);
+        varvec = _mm256_mul_ps(varvec,invbatcvec);
+        varvec = _mm256_sqrt_ps(varvec);
+        _mm256_storeu_ps(&BN->var[i],varvec);
     }
+    for(; i < A->size; i++){
+        BN->var[i] *= invbatch;
+        BN->var[i] = sqrtf(BN->var[i]);
+    }
+    i = 0;
+    for(; i < A->size; i++){
+        
+    }
+    
+    printf("done");
+    exit(1);
 }
 
 /// @brief Standardizes the activations
@@ -502,15 +418,17 @@ void layernorm(activations *A){
     for(; i < A->size; i++) var += pow(A->Z[i]-mean,2);
     var /= A->size;
     var = sqrtf(var) + 1e-9;
-    varvec = _mm256_set1_ps(var);
+    float oovar = 1/var;
+    varvec = _mm256_set1_ps(oovar);
     i = 0;
     for(; i+7 < A->size; i+=8){
         __m256 actvec = _mm256_loadu_ps(&A->Z[i]);
         actvec = _mm256_sub_ps(actvec, meanvec);
-        actvec = _mm256_div_ps(actvec,varvec);
+        actvec = _mm256_mul_ps(actvec,varvec);
         _mm256_storeu_ps(&A->Z[i],actvec);
     }
-    for(;i < A->size; i++) A->Z[i] /= var;
+    for(;i < A->size; i++) A->Z[i] *= var;
+
 }
 
 /// @brief inline function that prevents overflow in exp
@@ -531,7 +449,6 @@ static inline float gelu_approx(float x){
 /// @param A Activations struct
 /// @param func act func, default identity.
 void activation_function(activations*A,act_func_t func){
-    // Use the activation norm type to apply relevant normalization. 
     switch (A->norm_type)
     {
     case BatchNorm:
@@ -566,7 +483,7 @@ void activation_function(activations*A,act_func_t func){
 
     case Sigmoid:
         for(int i = 0; i < A->size; i++){
-            A->Z[i] = 1.0f/(1.0f+safe_exp(-A->Z[i])); // Fixed: should be -A->Z[i]
+            A->Z[i] = 1.0f/(1.0f+safe_exp(-A->Z[i])); 
             A->gprime[i] = A->Z[i] * (1.0f-A->Z[i]);
         }
         break;
@@ -574,7 +491,7 @@ void activation_function(activations*A,act_func_t func){
     case Tanh:
         for(int i = 0; i < A->size; i++){
             A->Z[i] = tanhf(A->Z[i]);
-            A->gprime[i] = 1.0f - A->Z[i] * A->Z[i]; // Avoid powf, use multiplication
+            A->gprime[i] = 1.0f - A->Z[i] * A->Z[i]; 
         }        
         break;
 
@@ -610,7 +527,7 @@ void activation_function(activations*A,act_func_t func){
         for (int i = 0; i < A->size; i++) {
             if (A->Z[i] <= 0) {
                 A->Z[i] = alpha * (safe_exp(A->Z[i]) - 1.0f);
-                A->gprime[i] = A->Z[i] + alpha; // ELU derivative: f(x) + alpha when x <= 0
+                A->gprime[i] = A->Z[i] + alpha; 
             } 
             else {A->gprime[i] = 1.0f;}
         }

@@ -58,15 +58,12 @@ typedef struct{
 // Batchnorm struct
 typedef struct{
     int count;
-    int batch_size;
-    int num_features;
     float*mean; // [features]
     float*var;// [features]
     float*gamma;// [features]
     float*beta;// [features]
     float*dgamma;// [features]
     float*dbeta;// [features]
-    float*x_hat;// [features*batch_size] Row major, each row a layer
 }batchnorm_t;
 
 // Layernorm struct
@@ -81,6 +78,8 @@ typedef struct{
 // bunched activations struct
 typedef struct{
     int size;
+    int batch_size;
+    float*raw;// rawdog values
     float*Z;  // activation values
     float*gprime; // activation derivative
     float*dZ; // gradient
@@ -110,7 +109,7 @@ activations*init_activations(int size,int batchsize,norm_type_t norm);
 // activations finalizer
 void Free_activations(activations*A);
 
-batchnorm_t* init_batchnorm(int batch_size, int num_features);
+batchnorm_t* init_batchnorm(int num_features);
 
 void free_batchnorm(batchnorm_t* BN);
 
