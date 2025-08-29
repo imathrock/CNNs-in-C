@@ -373,9 +373,13 @@ void batchnorm(activations*A){
         BN->var[i] *= invbatch;
         BN->var[i] = sqrtf(BN->var[i]);
     }
-    i = 0;
-    for(; i < A->size; i++){
-        
+    for(int i = 0; i < A->size; i++){
+        for(int j = 0; j < A->batch_size; j++){
+            ACT_BN(A,j,i) -= BN->mean[i];
+            ACT_BN(A,j,i) /= (BN->var[i]+1e-5);
+            ACT_BN(A,j,i) *= BN->gamma[i];
+            ACT_BN(A,j,i) += BN->beta[i];
+        }
     }
     
     printf("done");
