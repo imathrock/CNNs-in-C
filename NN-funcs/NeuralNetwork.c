@@ -381,9 +381,7 @@ void batchnorm(activations*A){
             ACT_BN(A,j,i) += BN->beta[i];
         }
     }
-    
-    printf("done");
-    exit(1);
+    // printf("Batchnorm done\n");
 }
 
 /// @brief Standardizes the activations
@@ -453,10 +451,12 @@ static inline float gelu_approx(float x){
 /// @param A Activations struct
 /// @param func act func, default identity.
 void activation_function(activations*A,act_func_t func){
+    int size = A->size;
     switch (A->norm_type)
     {
     case BatchNorm:
         batchnorm(A);
+        size *= A->batch_size;
         break;
     case LayerNorm:
         layernorm(A);
@@ -469,7 +469,7 @@ void activation_function(activations*A,act_func_t func){
         __m256 zeros = _mm256_setzero_ps();
         __m256 ones  = _mm256_set1_ps(1.0f);
         int i =0;
-        for (; i+7 < A->size; i += 8) {
+        for (; i+7 < size; i += 8) {
             __m256 data = _mm256_loadu_ps(&A->Z[i]);
             __m256 mask = _mm256_cmp_ps(data, zeros, _CMP_GT_OS);
             __m256 gprime = _mm256_and_ps(mask, ones);
@@ -477,7 +477,7 @@ void activation_function(activations*A,act_func_t func){
             __m256 result = _mm256_max_ps(data, zeros);
             _mm256_storeu_ps(&A->Z[i], result);
         }
-        for (; i < A->size; i++){
+        for (; i < size; i++){
             if (A->Z[i] <= 0) { A->Z[i] = 0.0f; A->gprime[i] = 0.0f;}
             else {A->gprime[i] = 1;}
         }
@@ -486,14 +486,14 @@ void activation_function(activations*A,act_func_t func){
         break;
 
     case Sigmoid:
-        for(int i = 0; i < A->size; i++){
+        for(int i = 0; i < size; i++){
             A->Z[i] = 1.0f/(1.0f+safe_exp(-A->Z[i])); 
             A->gprime[i] = A->Z[i] * (1.0f-A->Z[i]);
         }
         break;
 
     case Tanh:
-        for(int i = 0; i < A->size; i++){
+        for(int i = 0; i < size; i++){
             A->Z[i] = tanhf(A->Z[i]);
             A->gprime[i] = 1.0f - A->Z[i] * A->Z[i]; 
         }        
@@ -502,7 +502,7 @@ void activation_function(activations*A,act_func_t func){
     case LeakyRelu:
         {
         const float alpha = 0.01f; 
-        for (int i = 0; i < A->size; i++) {
+        for (int i = 0; i < size; i++) {
             if (A->Z[i] <= 0) {
                 A->Z[i] *= alpha;
                 A->gprime[i] = alpha;
@@ -515,7 +515,7 @@ void activation_function(activations*A,act_func_t func){
     case PReLU:
         {
         const float alpha = 0.25f; // Should be learnable parameter
-        for (int i = 0; i < A->size; i++) {
+        for (int i = 0; i < size; i++) {
             if (A->Z[i] <= 0) {
                 A->Z[i] *= alpha;
                 A->gprime[i] = alpha;
@@ -528,7 +528,7 @@ void activation_function(activations*A,act_func_t func){
     case ELU:
         {
         const float alpha = 1.0f;
-        for (int i = 0; i < A->size; i++) {
+        for (int i = 0; i < size; i++) {
             if (A->Z[i] <= 0) {
                 A->Z[i] = alpha * (safe_exp(A->Z[i]) - 1.0f);
                 A->gprime[i] = A->Z[i] + alpha; 
@@ -542,7 +542,7 @@ void activation_function(activations*A,act_func_t func){
         {
         const float alpha = 1.6732632423543772f;
         const float scale = 1.0507009873554805f;
-        for (int i = 0; i < A->size; i++) {
+        for (int i = 0; i < size; i++) {
             if (A->Z[i] <= 0) {
                 float exp_z = safe_exp(A->Z[i]);
                 A->Z[i] = scale * alpha * (exp_z - 1.0f);
@@ -557,7 +557,7 @@ void activation_function(activations*A,act_func_t func){
         break;
 
     case GELU:
-        for (int i = 0; i < A->size; i++) {
+        for (int i = 0; i < size; i++) {
             float x = A->Z[i];
             A->Z[i] = gelu_approx(x);
             // GELU derivative approximation
@@ -569,7 +569,7 @@ void activation_function(activations*A,act_func_t func){
         break;
 
     case Swish:
-        for (int i = 0; i < A->size; i++) {
+        for (int i = 0; i < size; i++) {
             float x = A->Z[i];
             float sigmoid = 1.0f/(1.0f+safe_exp(-x));
             A->Z[i] = x * sigmoid;
@@ -579,7 +579,7 @@ void activation_function(activations*A,act_func_t func){
 
     case Softmax:
         {
-        int k = A->size;
+        int k = size;
         // Numerically stable softmax with robust fallbacks
         float max_val = -INFINITY;
         for (int i = 0; i < k; i++) {
@@ -622,9 +622,10 @@ void activation_function(activations*A,act_func_t func){
         break;
         
     default:
-        for (int i = 0; i < A->size; i++) A->gprime[i] = 1.0f; 
+        for (int i = 0; i < size; i++) A->gprime[i] = 1.0f; 
         break;
     }
+    // printf("Activation func Done");
 }
 
 /// @brief Activation function for inference
@@ -879,6 +880,9 @@ float loss_function(activations*A, loss_func_t func, int k){
     return loss;
 }
 
+
+// Write a Forward prop function for inference
+
 /// @brief Efficient Forward prop function with AVX2 intrinsics.
 /// @param A1 Previous activation
 /// @param L Layer with weights and biases
@@ -886,24 +890,46 @@ float loss_function(activations*A, loss_func_t func, int k){
 void forward_prop_step(activations*A1, DenseLayer*L,activations*A2){ 
     if(A1->size != L->cols){perror("A1's size and L's weight's cols do not match"); exit(1);}
     if(A2->size != L->rows){perror("A2's size and L's weight's rows do not match"); exit(1);}
-    memcpy(A2->Z,L->params->biases,sizeof(float)*A2->size);
-    for(int i = 0; i < L->rows; i++){
-        __m256 sum_vec = _mm256_setzero_ps();
-        int j;
-        for(j = 0; j+7<L->cols; j+=8){
-            __m256 weightvec = _mm256_loadu_ps(&L_WEIGHT(L->params,i,j,L->cols));
-            __m256 act_vec = _mm256_loadu_ps(&A1->Z[j]);
-            sum_vec = _mm256_fmadd_ps(weightvec,act_vec,sum_vec);
-        }
-        __m128 bottom = _mm256_castps256_ps128(sum_vec);
-        __m128 top = _mm256_extractf128_ps(sum_vec,1);
-        bottom = _mm_add_ps(top,bottom);
-        bottom = _mm_hadd_ps(bottom,bottom);
-        bottom = _mm_hadd_ps(bottom,bottom);
-        float dot = _mm_cvtss_f32(bottom);
-        for(; j < L->cols; j++){ dot += L_WEIGHT(L->params,i,j,L->cols)*A1->Z[j]; }
-        A2->Z[i] += dot;
+    if(A1->norm_type!=A2->norm_type){perror("Normalization types do not match");exit(1);}
+        int a1_size = A1->size;
+    int a2_size = A2->size;
+    switch (A1->norm_type)
+    {
+    case BatchNorm:
+        a1_size *= A1->batch_size;
+        a2_size *= A2->batch_size;
+        break;
+    case LayerNorm:
+        break;
+    default:
+        break;
     }
+    for(int batch = 0; batch < A2->batch_size; batch++) {
+        memcpy(&A2->Z[batch * A2->size], L->params->biases, sizeof(float) * A2->size);
+    }
+    for(int batch = 0; batch < A1->batch_size; batch++) {
+        for(int i = 0; i < L->rows; i++){
+            __m256 sum_vec = _mm256_setzero_ps();
+            int j;
+            for(j = 0; j+7 < L->cols; j+=8){
+                __m256 weightvec = _mm256_loadu_ps(&L_WEIGHT(L->params,i,j,L->cols));
+                __m256 act_vec = _mm256_loadu_ps(&A1->Z[batch * A1->size + j]);
+                sum_vec = _mm256_fmadd_ps(weightvec,act_vec,sum_vec);
+            }
+            __m128 bottom = _mm256_castps256_ps128(sum_vec);
+            __m128 top = _mm256_extractf128_ps(sum_vec,1);
+            bottom = _mm_add_ps(top,bottom);
+            bottom = _mm_hadd_ps(bottom,bottom);
+            bottom = _mm_hadd_ps(bottom,bottom);
+            float dot = _mm_cvtss_f32(bottom);
+            for(; j < L->cols; j++){ 
+                dot += L_WEIGHT(L->params,i,j,L->cols) * A1->Z[batch * A1->size + j]; 
+            }
+            A2->Z[batch * A2->size + i] += dot;
+        }
+    }
+    // printf("\n Forward_prop_step done");
+    // exit(1);
 }
 
 /// @brief Calcualtes Gradient in activation given previous gradient.
