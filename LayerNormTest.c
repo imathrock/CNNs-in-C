@@ -45,10 +45,10 @@ int main(){
     int lay3 = 64;    
     int lay4 = 10;
 
-    activations*A1 = init_activations(lay1,BATCH_SIZE,NormNone);
-    activations*A2 = init_activations(lay2,BATCH_SIZE,NormNone);
-    activations*A3 = init_activations(lay3,BATCH_SIZE,NormNone);
-    activations*A4 = init_activations(lay4,BATCH_SIZE,NormNone);
+    activations*A1 = init_activations(lay1,BATCH_SIZE,LayerNorm);
+    activations*A2 = init_activations(lay2,BATCH_SIZE,LayerNorm);
+    activations*A3 = init_activations(lay3,BATCH_SIZE,LayerNorm);
+    activations*A4 = init_activations(lay4,BATCH_SIZE,LayerNorm);
     // Layer init
     DenseLayer*L1 = init_DenseLayer(lay2,lay1,5);
     DenseLayer*L2 = init_DenseLayer(lay3,lay2,5);

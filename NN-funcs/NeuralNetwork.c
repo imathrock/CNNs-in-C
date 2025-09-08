@@ -887,46 +887,65 @@ float loss_function(activations*A, loss_func_t func, int k){
 /// @param A1 Previous activation
 /// @param L Layer with weights and biases
 /// @param A2 Next activation
+void unit_forward_prop(activations*A1, DenseLayer*L,activations*A2,int count){ 
+    memcpy(&A2->Z[count*A1->size],L->params->biases,sizeof(float)*A2->size);
+    for(int i = 0; i < L->rows; i++){
+        __m256 sum_vec = _mm256_setzero_ps();
+        int j;
+        for(j = 0; j+7<L->cols; j+=8){
+            __m256 weightvec = _mm256_loadu_ps(&L_WEIGHT(L->params,i,j,L->cols));
+            __m256 act_vec = _mm256_loadu_ps(&A1->Z[j+count*A1->size]);
+            sum_vec = _mm256_fmadd_ps(weightvec,act_vec,sum_vec);
+        }
+        __m128 bottom = _mm256_castps256_ps128(sum_vec);
+        __m128 top = _mm256_extractf128_ps(sum_vec,1);
+        bottom = _mm_add_ps(top,bottom);
+        bottom = _mm_hadd_ps(bottom,bottom);
+        bottom = _mm_hadd_ps(bottom,bottom);
+        float dot = _mm_cvtss_f32(bottom);
+        for(; j < L->cols; j++){ dot += L_WEIGHT(L->params,i,j,L->cols)*A1->Z[j+count*A1->size]; }
+        A2->Z[i+count*A2->size] += dot;
+    }
+}
+
+/// @brief Efficient Forward prop function with AVX2 intrinsics.
+/// @param A1 Previous activation
+/// @param L Layer with weights and biases
+/// @param A2 Next activation
 void forward_prop_step(activations*A1, DenseLayer*L,activations*A2){ 
     if(A1->size != L->cols){perror("A1's size and L's weight's cols do not match"); exit(1);}
     if(A2->size != L->rows){perror("A2's size and L's weight's rows do not match"); exit(1);}
     if(A1->norm_type!=A2->norm_type){perror("Normalization types do not match");exit(1);}
-        int a1_size = A1->size;
-    int a2_size = A2->size;
     switch (A1->norm_type)
     {
     case BatchNorm:
-        a1_size *= A1->batch_size;
-        a2_size *= A2->batch_size;
+        for (int i = 0; i < A1->batch_size; i++){
+            unit_forward_prop(A1,L,A2,i);
+        }
         break;
     case LayerNorm:
         break;
+    
     default:
         break;
     }
-    for(int batch = 0; batch < A2->batch_size; batch++) {
-        memcpy(&A2->Z[batch * A2->size], L->params->biases, sizeof(float) * A2->size);
-    }
-    for(int batch = 0; batch < A1->batch_size; batch++) {
-        for(int i = 0; i < L->rows; i++){
-            __m256 sum_vec = _mm256_setzero_ps();
-            int j;
-            for(j = 0; j+7 < L->cols; j+=8){
-                __m256 weightvec = _mm256_loadu_ps(&L_WEIGHT(L->params,i,j,L->cols));
-                __m256 act_vec = _mm256_loadu_ps(&A1->Z[batch * A1->size + j]);
-                sum_vec = _mm256_fmadd_ps(weightvec,act_vec,sum_vec);
-            }
-            __m128 bottom = _mm256_castps256_ps128(sum_vec);
-            __m128 top = _mm256_extractf128_ps(sum_vec,1);
-            bottom = _mm_add_ps(top,bottom);
-            bottom = _mm_hadd_ps(bottom,bottom);
-            bottom = _mm_hadd_ps(bottom,bottom);
-            float dot = _mm_cvtss_f32(bottom);
-            for(; j < L->cols; j++){ 
-                dot += L_WEIGHT(L->params,i,j,L->cols) * A1->Z[batch * A1->size + j]; 
-            }
-            A2->Z[batch * A2->size + i] += dot;
+    memcpy(A2->Z,L->params->biases,sizeof(float)*A2->size);
+    for(int i = 0; i < L->rows; i++){
+        __m256 sum_vec = _mm256_setzero_ps();
+        int j;
+        for(j = 0; j+7<L->cols; j+=8){
+            __m256 weightvec = _mm256_loadu_ps(&L_WEIGHT(L->params,i,j,L->cols));
+            __m256 act_vec = _mm256_loadu_ps(&A1->Z[j]);
+            sum_vec = _mm256_fmadd_ps(weightvec,act_vec,sum_vec);
         }
+        __m128 bottom = _mm256_castps256_ps128(sum_vec);
+        __m128 top = _mm256_extractf128_ps(sum_vec,1);
+        bottom = _mm_add_ps(top,bottom);
+        bottom = _mm_hadd_ps(bottom,bottom);
+        bottom = _mm_hadd_ps(bottom,bottom);
+        float dot = _mm_cvtss_f32(bottom);
+        for(; j < L->cols; j++){ dot += L_WEIGHT(L->params,i,j,L->cols)*A1->Z[j]; }
+        A2->Z[i] += dot;
     }
     // printf("\n Forward_prop_step done");
     // exit(1);
