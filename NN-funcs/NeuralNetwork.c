@@ -381,7 +381,7 @@ void batchnorm(activations*A){
             ACT_BN(A,j,i) += BN->beta[i];
         }
     }
-    // printf("Batchnorm done\n");
+    printf("Batchnorm done\n");
 }
 
 /// @brief Standardizes the activations
@@ -888,7 +888,7 @@ float loss_function(activations*A, loss_func_t func, int k){
 /// @param L Layer with weights and biases
 /// @param A2 Next activation
 void unit_forward_prop(activations*A1, DenseLayer*L,activations*A2,int count){ 
-    memcpy(&A2->Z[count*A1->size],L->params->biases,sizeof(float)*A2->size);
+    memcpy(&A2->Z[count*A2->size],L->params->biases,sizeof(float)*A2->size);
     for(int i = 0; i < L->rows; i++){
         __m256 sum_vec = _mm256_setzero_ps();
         int j;
@@ -919,16 +919,17 @@ void forward_prop_step(activations*A1, DenseLayer*L,activations*A2){
     switch (A1->norm_type)
     {
     case BatchNorm:
-        for (int i = 0; i < A1->batch_size; i++){
+    printf("%i\n",A1->size*A1->batch_size);
+    printf("%i\n",A2->size*A2->batch_size);
+    for (int i = 0; i < A1->batch_size; i++){
             unit_forward_prop(A1,L,A2,i);
         }
+        printf("\n");
         break;
     case LayerNorm:
         break;
     
     default:
-        break;
-    }
     memcpy(A2->Z,L->params->biases,sizeof(float)*A2->size);
     for(int i = 0; i < L->rows; i++){
         __m256 sum_vec = _mm256_setzero_ps();
@@ -947,7 +948,10 @@ void forward_prop_step(activations*A1, DenseLayer*L,activations*A2){
         for(; j < L->cols; j++){ dot += L_WEIGHT(L->params,i,j,L->cols)*A1->Z[j]; }
         A2->Z[i] += dot;
     }
-    // printf("\n Forward_prop_step done");
+        break;
+    }
+    printf("\n Forward_prop_step done");
+
     // exit(1);
 }
 
