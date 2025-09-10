@@ -21,6 +21,7 @@ void print_ascii_art(Image2D img) {
     }
 }
 
+
 int main(){
     FILE* file = fopen("fashion-mnist/train-images-idx3-ubyte", "rb");
     struct pixel_data* pixel_data = get_image_pixel_data(file);
@@ -36,7 +37,7 @@ int main(){
     //10 epochs 0.0005 lr 88.97%
     // Training parameters
     int epoch = 100;
-    float learning_rate = 0.000001;
+    float learning_rate = 0.0001;
     int size = pixel_data->size/BATCH_SIZE; 
     
     // layer sizes
@@ -75,53 +76,59 @@ int main(){
         float start = clock();
         for (int j = 0; j < size; j++) {
             float total_loss = 0.0f;
-            
+
             for (int k = BATCH_SIZE * j; k < BATCH_SIZE * (j + 1); k++) {
                 // Load image
                 ImageInput(image, pixel_data->neuron_activation[k]);
                 // Conv + Pool
+                int layersize = A1->norm_params.BN->count * A1->size;
                 for (int i = 0; i < NUM_KERNELS; i++) {
                     Conv2D(kernels[i], image, convimg[i]);
                     MAXPOOL(Poolimg[i], convimg[i], 2, 2);
 
                     int imgsize = Poolimg[i].rows * Poolimg[i].cols;
-                    memcpy(A1->Z + i * imgsize, Poolimg[i].Data, imgsize * sizeof(float));
+                    memcpy(&A1->raw[(i * imgsize) + layersize], Poolimg[i].Data, imgsize * sizeof(float));
                 }
-                // Forward
-                activation_function(A1, ReLU);
-                forward_prop_step(A1, L1, A2);
-                activation_function(A2, ReLU);
-                forward_prop_step(A2, L2, A3);
-                activation_function(A3, ReLU);
-                forward_prop_step(A3, L3, A4);
-                activation_function(A4, Softmax);
-    
-                // Loss
-                total_loss += loss_function(A4, CE, lbl_arr[k]) / BATCH_SIZE;
-                // Backward
-                back_propogate_step(A3, L3, A4);
-                calc_grad_activation(A3, L3, A4);
-    
-                back_propogate_step(A2, L2, A3);
-                calc_grad_activation(A2, L2, A3);
-    
-                back_propogate_step(A1, L1, A2);
-                calc_grad_activation(A1, L1, A2);
-    
-                // Backprop kernels
-                for (int i = 0; i < NUM_KERNELS; i++) {
-                    int imgsize = Poolimg[i].rows * Poolimg[i].cols;
-                    memcpy(Poolimg[i].Data, A1->dZ + i * imgsize, imgsize * sizeof(float));
-                    MAXUNPOOL(convimg[i], Poolimg[i]);
-                    backprop_kernel(kernels[i], convimg[i], image);
-                    kernel_accum(kernels[i],(float)1/BATCH_SIZE);
-                }
-                grad_accum(L1);
-                grad_accum(L2);
-                grad_accum(L3);
+                A1->norm_params.BN->count++;
+                // printf("%i\n",A1->norm_params.BN->count);
             }
+            A1->norm_params.BN->count = 0;
+            // Forward
+            activation_function(A1, ReLU);
+            forward_prop_step(A1, L1, A2);
+            activation_function(A2, ReLU);
+            forward_prop_step(A2, L2, A3);
+            activation_function(A3, ReLU);
+            forward_prop_step(A3, L3, A4);
+            activation_function(A4, Softmax);
 
-            printf("\ntotal loss: %f\n",total_loss);
+            // Loss
+            for (int k = BATCH_SIZE * j; k < BATCH_SIZE * (j + 1); k++) {
+                total_loss += loss_function(A4, CE, lbl_arr[k]) / BATCH_SIZE;
+            }
+            // Backward
+            back_propogate_step(A3, L3, A4);
+            calc_grad_activation(A3, L3, A4);
+
+            back_propogate_step(A2, L2, A3);
+            calc_grad_activation(A2, L2, A3);
+
+            back_propogate_step(A1, L1, A2);
+            calc_grad_activation(A1, L1, A2);
+
+            // Backprop kernels
+            for (int i = 0; i < NUM_KERNELS; i++) {
+                int imgsize = Poolimg[i].rows * Poolimg[i].cols;
+                memcpy(Poolimg[i].Data, A1->dZ + i * imgsize, imgsize * sizeof(float));
+                MAXUNPOOL(convimg[i], Poolimg[i]);
+                backprop_kernel(kernels[i], convimg[i], image);
+                kernel_accum(kernels[i],(float)1/BATCH_SIZE);
+            }
+            grad_accum(L1);
+            grad_accum(L2);
+            grad_accum(L3);
+
+            // printf("\ntotal loss: %f\n",total_loss);
                         
             // Apply gradient descent update
             update_weights(L1, learning_rate);
@@ -135,7 +142,6 @@ int main(){
                 kernel_update(kernels[i], learning_rate);
                 zero_kernel(kernels[i]);
             }
-            printf("gbuew");
         }
         float end = clock();
         printf("Epoch %i time: %f s\n", epoch,((end - start) / CLOCKS_PER_SEC));
@@ -179,5 +185,3 @@ int main(){
     
     return 1;
 }
- 
- 

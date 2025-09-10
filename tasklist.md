@@ -8,3 +8,7 @@ To implement batchnorm what i have currently done is accumulate the pre activati
     - Something like inference activation calls batchnorm inference
     - Uses normal forward propagate function for inference because there is no need for batches. 
 
+Okay batchnorm did not work. I know that i am doing SGD only here so to improve the design I can just accumulate the batch and do the forward and backward prop and batchnormalize when necessary. 
+
+Redesign and restart. 
+

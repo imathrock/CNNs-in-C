@@ -345,6 +345,7 @@ void free_layernorm(layernorm_t*LN) {
     free(LN);
 }
 
+// To improve this function, store squared values in var and subtract squared mean later in a shorter single loop
 /// @brief Batchnorm function
 /// @param A 
 void batchnorm(activations*A){
@@ -381,7 +382,7 @@ void batchnorm(activations*A){
             ACT_BN(A,j,i) += BN->beta[i];
         }
     }
-    printf("Batchnorm done\n");
+    // printf("Batchnorm done\n");
 }
 
 /// @brief Standardizes the activations
@@ -764,6 +765,9 @@ void inference_activation_function(activations* A, act_func_t func) {
 }
 
 
+// Can be modified to take a batch size array of int k. 
+// Use switch case for checking that based on batchnorm
+
 /// @brief Applies loss function to final layer
 /// @param A activation buffer
 /// @param func loss function
@@ -908,6 +912,10 @@ void unit_forward_prop(activations*A1, DenseLayer*L,activations*A2,int count){
     }
 }
 
+int counter = 0;
+
+// Counter stops at 10 for some reason, Investigate.
+
 /// @brief Efficient Forward prop function with AVX2 intrinsics.
 /// @param A1 Previous activation
 /// @param L Layer with weights and biases
@@ -919,12 +927,13 @@ void forward_prop_step(activations*A1, DenseLayer*L,activations*A2){
     switch (A1->norm_type)
     {
     case BatchNorm:
-    printf("%i\n",A1->size*A1->batch_size);
-    printf("%i\n",A2->size*A2->batch_size);
+    // printf("%i\n",counter++/3);
+    // printf("%i\n",A1->size*A1->batch_size);
+    // printf("%i\n",A2->size*A2->batch_size);
     for (int i = 0; i < A1->batch_size; i++){
             unit_forward_prop(A1,L,A2,i);
         }
-        printf("\n");
+        // printf("\n");
         break;
     case LayerNorm:
         break;
@@ -950,7 +959,7 @@ void forward_prop_step(activations*A1, DenseLayer*L,activations*A2){
     }
         break;
     }
-    printf("\n Forward_prop_step done");
+    // printf("\n Forward_prop_step done");
 
     // exit(1);
 }
