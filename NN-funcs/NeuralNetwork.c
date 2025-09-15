@@ -912,9 +912,6 @@ void unit_forward_prop(activations*A1, DenseLayer*L,activations*A2,int count){
     }
 }
 
-int counter = 0;
-
-// Counter stops at 10 for some reason, Investigate.
 
 /// @brief Efficient Forward prop function with AVX2 intrinsics.
 /// @param A1 Previous activation
@@ -927,17 +924,10 @@ void forward_prop_step(activations*A1, DenseLayer*L,activations*A2){
     switch (A1->norm_type)
     {
     case BatchNorm:
-    // printf("%i\n",counter++/3);
-    // printf("%i\n",A1->size*A1->batch_size);
-    // printf("%i\n",A2->size*A2->batch_size);
     for (int i = 0; i < A1->batch_size; i++){
             unit_forward_prop(A1,L,A2,i);
         }
-        // printf("\n");
         break;
-    case LayerNorm:
-        break;
-    
     default:
     memcpy(A2->Z,L->params->biases,sizeof(float)*A2->size);
     for(int i = 0; i < L->rows; i++){
@@ -959,9 +949,34 @@ void forward_prop_step(activations*A1, DenseLayer*L,activations*A2){
     }
         break;
     }
-    // printf("\n Forward_prop_step done");
+}
 
-    // exit(1);
+/// @brief Calcualtes Gradient in activation given previous gradient.
+/// @param A1 The gradient to be calculated
+/// @param L Weights and biases of the layer in front
+/// @param dZ_prev loss function 
+void unit_calc_grad_act(activations* A1, DenseLayer*L, activations* A2, int count){
+    for (int i = 0; i < L->cols; i++) {
+        float sum = 0.0f;
+        __m256 sumvec = _mm256_setzero_ps();
+        int j = 0;
+        const float*weights = &L_WEIGHT_T(L->params, i, 0, L->rows);
+        for (; j+7 < L->rows; j+=8) {
+            __m256 A2vec = _mm256_load_ps(&A2->dZ[j + count*A2->size]);
+            __m256 weightvec = _mm256_load_ps(&weights[j]);
+            sumvec = _mm256_fmadd_ps(weightvec, A2vec, sumvec);
+        }
+        __m128 bottom = _mm256_castps256_ps128(sumvec);
+        __m128 top = _mm256_extractf128_ps(sumvec, 1);
+        bottom = _mm_add_ps(top, bottom);
+        bottom = _mm_hadd_ps(bottom, bottom);
+        bottom = _mm_hadd_ps(bottom, bottom);
+        sum = _mm_cvtss_f32(bottom);
+        for (; j < L->rows; j++) {
+            sum += weights[j] * A2->dZ[j + count*A2->size]; 
+        }
+        A1->dZ[i + count*A1->size] = sum * A1->gprime[i + count*A1->size];
+    }
 }
 
 /// @brief Calcualtes Gradient in activation given previous gradient.
@@ -971,29 +986,59 @@ void forward_prop_step(activations*A1, DenseLayer*L,activations*A2){
 void calc_grad_activation(activations* A1,DenseLayer*L,activations* A2){
     if(L->rows != A2->size){perror("The Layer matricies and gradient layer matricies do not match");exit(1);}
     if(L->cols != A1->size){perror("The Layer matricies and curr_grad layer matricies do not match");exit(1);}
-    for (int i = 0; i < L->cols; i++) {
-        float sum = 0.0f;
-        __m256 sumvec = _mm256_setzero_ps();
-        int j = 0;
-        const float*weights = &L_WEIGHT_T(L->params, i, 0, L->rows);
-        for (; j+7 < L->rows; j+=8) {
-            __m256 A2vec = _mm256_load_ps(&A2->dZ[j]);
-            __m256 weightvec = _mm256_load_ps(&weights[j]);
-            sumvec = _mm256_fmadd_ps(weightvec,A2vec,sumvec);
+    switch (A1->norm_type){
+    case BatchNorm:
+        for (int i = 0; i < A1->batch_size; i++){
+            unit_calc_grad_act(A1,L,A2,i);
         }
-        __m128 bottom = _mm256_castps256_ps128(sumvec);
-        __m128 top = _mm256_extractf128_ps(sumvec,1);
-        bottom = _mm_add_ps(top,bottom);
-        bottom = _mm_hadd_ps(bottom,bottom);
-        bottom = _mm_hadd_ps(bottom,bottom);
-        sum = _mm_cvtss_f32(bottom);
-        for (; j < L->rows; j++) {
-            sum += weights[j] * A2->dZ[j]; 
+        break;
+
+    default:
+        for (int i = 0; i < L->cols; i++) {
+            float sum = 0.0f;
+            __m256 sumvec = _mm256_setzero_ps();
+            int j = 0;
+            const float*weights = &L_WEIGHT_T(L->params, i, 0, L->rows);
+            for (; j+7 < L->rows; j+=8) {
+                __m256 A2vec = _mm256_load_ps(&A2->dZ[j]);
+                __m256 weightvec = _mm256_load_ps(&weights[j]);
+                sumvec = _mm256_fmadd_ps(weightvec,A2vec,sumvec);
+            }
+            __m128 bottom = _mm256_castps256_ps128(sumvec);
+            __m128 top = _mm256_extractf128_ps(sumvec,1);
+            bottom = _mm_add_ps(top,bottom);
+            bottom = _mm_hadd_ps(bottom,bottom);
+            bottom = _mm_hadd_ps(bottom,bottom);
+            sum = _mm_cvtss_f32(bottom);
+            for (; j < L->rows; j++) {
+                sum += weights[j] * A2->dZ[j]; 
+            }
+            A1->dZ[i] = sum * A1->gprime[i];
         }
-        A1->dZ[i] = sum * A1->gprime[i];
+        break;
     }
 }
 
+/// @brief Conducts 1 step of back propogation
+/// @param L Layer's weights and biases
+/// @param dL Gradient layer
+/// @param dZ activation gradient
+/// @param A n-1th layer
+void unit_backward_prop(activations*A1, DenseLayer*L, activations*A2, int count){
+    memcpy(L->param_grad->biases, &A2->dZ[count*A2->size], sizeof(float)*A2->size);
+    for (int i = 0; i < L->rows; i++){
+        __m256 dZ_vec = _mm256_set1_ps(A2->dZ[i + count*A2->size]);
+        int j;
+        for (j = 0; j+7 < L->cols; j+=8){
+            __m256 A_vec = _mm256_loadu_ps(&A1->Z[j + count*A1->size]);
+            __m256 weight_vec = _mm256_mul_ps(dZ_vec, A_vec);
+            _mm256_storeu_ps(&L_WEIGHT(L->param_grad, i, j, L->cols), weight_vec);
+        }
+        for (; j < L->cols; j++) {
+            L_WEIGHT(L->param_grad, i, j, L->cols) = A2->dZ[i + count*A2->size] * A1->Z[j + count*A1->size];
+        }
+    }
+}
 
 /// @brief Conducts 1 step of back propogation
 /// @param L Layer's weights and biases
@@ -1003,6 +1048,14 @@ void calc_grad_activation(activations* A1,DenseLayer*L,activations* A2){
 void back_propogate_step(activations*A1,DenseLayer*L,activations* A2){
     if(A2->size != L->rows){perror("Gradient activation and gradient layer matricies do not match");exit(1);}
     if(A1->size != L->cols){perror("activation and GradientLayer matrices do not match");exit(1);}
+    switch (A1->norm_type){
+    case BatchNorm:
+        for (int i = 0; i < A1->batch_size; i++){
+            unit_backward_prop(A1,L,A2,i);
+        }
+        break;
+    
+    default:
     memcpy(L->param_grad->biases,A2->dZ,sizeof(float)*A2->size);
     for (int i = 0; i < L->rows; i++){
         __m256 dZ_vec = _mm256_set1_ps(A2->dZ[i]);
@@ -1013,6 +1066,8 @@ void back_propogate_step(activations*A1,DenseLayer*L,activations* A2){
             _mm256_storeu_ps(&L_WEIGHT(L->param_grad,i,j,L->cols),weight_vec);
         }
         for (; j<L->cols; j++) L_WEIGHT(L->param_grad,i,j,L->cols) = A2->dZ[i]*A1->Z[j];
+    }
+        break;
     }
 }
 

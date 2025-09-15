@@ -6,7 +6,7 @@
 #include"Conv/Convolution2D.h"
 #include"NN-funcs/NeuralNetwork.h"
 
-#define BATCH_SIZE 2048
+#define BATCH_SIZE 128
 #define NUM_KERNELS 8
 #define KERNEL_SIZE 5
 
@@ -76,16 +76,16 @@ int main(){
         float start = clock();
         for (int j = 0; j < size; j++) {
             float total_loss = 0.0f;
-
+            A1->norm_params.BN->count = 0;
             for (int k = BATCH_SIZE * j; k < BATCH_SIZE * (j + 1); k++) {
                 // Load image
+                if(A1->norm_params.BN->count >= BATCH_SIZE){perror("A1->norm_params.BN->count exceeds batch size"); exit(1);}
                 ImageInput(image, pixel_data->neuron_activation[k]);
                 // Conv + Pool
                 int layersize = A1->norm_params.BN->count * A1->size;
                 for (int i = 0; i < NUM_KERNELS; i++) {
                     Conv2D(kernels[i], image, convimg[i]);
                     MAXPOOL(Poolimg[i], convimg[i], 2, 2);
-
                     int imgsize = Poolimg[i].rows * Poolimg[i].cols;
                     memcpy(&A1->raw[(i * imgsize) + layersize], Poolimg[i].Data, imgsize * sizeof(float));
                 }
@@ -114,13 +114,18 @@ int main(){
             back_propogate_step(A1, L1, A2);
             calc_grad_activation(A1, L1, A2);
 
+            A1->norm_params.BN->count = 0;
             // Backprop kernels
-            for (int i = 0; i < NUM_KERNELS; i++) {
-                int imgsize = Poolimg[i].rows * Poolimg[i].cols;
-                memcpy(Poolimg[i].Data, A1->dZ + i * imgsize, imgsize * sizeof(float));
-                MAXUNPOOL(convimg[i], Poolimg[i]);
-                backprop_kernel(kernels[i], convimg[i], image);
-                kernel_accum(kernels[i],(float)1/BATCH_SIZE);
+            for (int k = BATCH_SIZE * j; k < BATCH_SIZE * (j + 1); k++) {
+                int layersize = A1->norm_params.BN->count * A1->size;
+                for (int i = 0; i < NUM_KERNELS; i++) {
+                    int imgsize = Poolimg[i].rows * Poolimg[i].cols;
+                    memcpy(Poolimg[i].Data, &A1->dZ[(i * imgsize) + layersize], imgsize * sizeof(float));
+                    MAXUNPOOL(convimg[i], Poolimg[i]);
+                    backprop_kernel(kernels[i], convimg[i], image);
+                    kernel_accum(kernels[i], (float)1/BATCH_SIZE);
+                }
+                A1->norm_params.BN->count++;
             }
             grad_accum(L1);
             grad_accum(L2);
@@ -175,11 +180,6 @@ int main(){
     
     image_data_finalizer(pixel_data);
     image_label_finalizer(lbl_arr);
-    
-    // float start = clock();
-    // float end = clock();
-    // printf("\n\nTesting 10000 inferences, time: %f ms\n",((end - start) / CLOCKS_PER_SEC) * 1000);
-    // printf("\n\n The Accuracy of the model is: %d/%d\n\n",correct_pred,test_pix_data->size);
     
     return 1;
 }

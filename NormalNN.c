@@ -6,7 +6,7 @@
 #include"Conv/Convolution2D.h"
 #include"NN-funcs/NeuralNetwork.h"
 
-#define BATCH_SIZE 2048
+#define BATCH_SIZE 128
 #define NUM_KERNELS 8
 #define KERNEL_SIZE 5
 
@@ -120,8 +120,6 @@ int main(){
                 grad_accum(L2);
                 grad_accum(L3);
             }
-
-            printf("\ntotal loss: %f\n",total_loss);
                         
             // Apply gradient descent update
             update_weights(L1, learning_rate);
@@ -135,7 +133,6 @@ int main(){
                 kernel_update(kernels[i], learning_rate);
                 zero_kernel(kernels[i]);
             }
-            printf("gbuew");
         }
         float end = clock();
         printf("Epoch %i time: %f s\n", epoch,((end - start) / CLOCKS_PER_SEC));
@@ -171,11 +168,6 @@ int main(){
     
     image_data_finalizer(pixel_data);
     image_label_finalizer(lbl_arr);
-    
-    // float start = clock();
-    // float end = clock();
-    // printf("\n\nTesting 10000 inferences, time: %f ms\n",((end - start) / CLOCKS_PER_SEC) * 1000);
-    // printf("\n\n The Accuracy of the model is: %d/%d\n\n",correct_pred,test_pix_data->size);
     
     return 1;
 }
