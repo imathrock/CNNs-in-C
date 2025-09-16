@@ -11,6 +11,7 @@
 #define L_WEIGHT(L, i, j, cols)  (L->Weights[((i) * cols) + (j)])
 #define L_WEIGHT_T(L, i, j, rows)  (L->Weights_T[((i) * rows) + (j)])
 #define ACT_BN(A,i,j) (A->raw[(i)*(A->size)+(j)])
+#define ACT_BN_Z(A,i,j) (A->Z[(i)*(A->size)+(j)])
 
 /// @brief Box Muller transform, computes random number on mean=0 and var=1 spectrum. Generates 2 numbers, returns spare on second call.
 /// @return random number
@@ -300,7 +301,7 @@ batchnorm_t* init_batchnorm(int num_features) {
     BN->count = 0;
     BN->mean    = (float*)calloc(num_features, sizeof(float));
     BN->var     = (float*)calloc(num_features, sizeof(float));
-    BN->gamma   = (float*)calloc(num_features, sizeof(float));
+    BN->gamma   = (float*)malloc(num_features* sizeof(float));
     BN->beta    = (float*)calloc(num_features, sizeof(float));
     BN->dgamma  = (float*)calloc(num_features, sizeof(float));
     BN->dbeta   = (float*)calloc(num_features, sizeof(float));
@@ -351,6 +352,9 @@ void free_layernorm(layernorm_t*LN) {
 void batchnorm(activations*A){
     batchnorm_t*BN = A->norm_params.BN;
     float invbatch = 1.0f / A->batch_size;
+    const float epsilon = 1e-5f;
+    memset(BN->mean, 0, A->size * sizeof(float));
+    memset(BN->var, 0, A->size * sizeof(float));
     for(int i = 0; i < A->size; i++){
         for (int j = 0; j < A->batch_size; j++){
             BN->mean[i] += ACT_BN(A,j,i);
@@ -358,32 +362,39 @@ void batchnorm(activations*A){
         BN->mean[i] *= invbatch;
     }
     for(int i = 0; i < A->size; i++){
+        float mean_val = BN->mean[i];
+        // printf("\nMean value: %f",BN->mean[i]);
         for (int j = 0; j < A->batch_size; j++){
-            BN->var[i] += (ACT_BN(A,j,i) - BN->mean[i])*(ACT_BN(A,j,i) - BN->mean[i]);
+            float diff = ACT_BN(A,j,i) - mean_val;
+            BN->var[i] += diff * diff;
         }
+        BN->var[i] *= invbatch;
     }
-    __m256 invbatcvec = _mm256_set1_ps(invbatch);
+    __m256 epsilonvec = _mm256_set1_ps(epsilon);
     int i = 0;
     for (; i+7 < A->size; i+=8){
         __m256 varvec = _mm256_loadu_ps(&BN->var[i]);
-        varvec = _mm256_mul_ps(varvec,invbatcvec);
+        varvec = _mm256_add_ps(varvec, epsilonvec);
         varvec = _mm256_sqrt_ps(varvec);
-        _mm256_storeu_ps(&BN->var[i],varvec);
+        _mm256_storeu_ps(&BN->var[i], varvec);
     }
     for(; i < A->size; i++){
-        BN->var[i] *= invbatch;
-        BN->var[i] = sqrtf(BN->var[i]);
+        BN->var[i] = sqrtf(BN->var[i] + epsilon);
     }
+    
     for(int i = 0; i < A->size; i++){
+        float mean_val = BN->mean[i];
+        float std_val = BN->var[i];
+        float gamma_val = BN->gamma[i];
+        float beta_val = BN->beta[i];
         for(int j = 0; j < A->batch_size; j++){
-            ACT_BN(A,j,i) -= BN->mean[i];
-            ACT_BN(A,j,i) /= (BN->var[i]+1e-5);
-            ACT_BN(A,j,i) *= BN->gamma[i];
-            ACT_BN(A,j,i) += BN->beta[i];
+            ACT_BN_Z(A,j,i) = ((ACT_BN(A,j,i) - mean_val) / std_val) * gamma_val + beta_val;
         }
+        // printf("After Z:%f\n",ACT_BN_Z(A,0,i));
     }
-    // printf("Batchnorm done\n");
+    // printf("\n\n\n\n\n\n\n\n\n\n\n\n");
 }
+
 
 /// @brief Standardizes the activations
 /// @param A 
@@ -481,8 +492,7 @@ void activation_function(activations*A,act_func_t func){
         for (; i < size; i++){
             if (A->Z[i] <= 0) { A->Z[i] = 0.0f; A->gprime[i] = 0.0f;}
             else {A->gprime[i] = 1;}
-        }
-        
+        }        
         }
         break;
 
@@ -884,8 +894,30 @@ float loss_function(activations*A, loss_func_t func, int k){
     return loss;
 }
 
-
-// Write a Forward prop function for inference
+/// @brief Efficient Forward prop function with AVX2 intrinsics.
+/// @param A1 Previous activation
+/// @param L Layer with weights and biases
+/// @param A2 Next activation
+void forward_prop_inference(activations*A1, DenseLayer*L,activations*A2){ 
+    memcpy(A2->Z,L->params->biases,sizeof(float)*A2->size);
+    for(int i = 0; i < L->rows; i++){
+        __m256 sum_vec = _mm256_setzero_ps();
+        int j;
+        for(j = 0; j+7<L->cols; j+=8){
+            __m256 weightvec = _mm256_loadu_ps(&L_WEIGHT(L->params,i,j,L->cols));
+            __m256 act_vec = _mm256_loadu_ps(&A1->Z[j]);
+            sum_vec = _mm256_fmadd_ps(weightvec,act_vec,sum_vec);
+        }
+        __m128 bottom = _mm256_castps256_ps128(sum_vec);
+        __m128 top = _mm256_extractf128_ps(sum_vec,1);
+        bottom = _mm_add_ps(top,bottom);
+        bottom = _mm_hadd_ps(bottom,bottom);
+        bottom = _mm_hadd_ps(bottom,bottom);
+        float dot = _mm_cvtss_f32(bottom);
+        for(; j < L->cols; j++){ dot += L_WEIGHT(L->params,i,j,L->cols)*A1->Z[j]; }
+        A2->Z[i] += dot;
+    }
+}
 
 /// @brief Efficient Forward prop function with AVX2 intrinsics.
 /// @param A1 Previous activation
@@ -908,7 +940,10 @@ void unit_forward_prop(activations*A1, DenseLayer*L,activations*A2,int count){
         bottom = _mm_hadd_ps(bottom,bottom);
         float dot = _mm_cvtss_f32(bottom);
         for(; j < L->cols; j++){ dot += L_WEIGHT(L->params,i,j,L->cols)*A1->Z[j+count*A1->size]; }
-        A2->Z[i+count*A2->size] += dot;
+        A2->raw[i+count*A2->size] += dot;
+    }
+    for(int i = 0; i < A2->size; i++){
+        // printf("Forward prop A2 raw:%f \n", A2->raw[i]);
     }
 }
 
@@ -1069,6 +1104,7 @@ void back_propogate_step(activations*A1,DenseLayer*L,activations* A2){
     }
         break;
     }
+    calc_grad_activation(A1,L,A2);
 }
 
 /// @brief Gradient Accumulator

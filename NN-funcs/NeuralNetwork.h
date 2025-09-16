@@ -130,6 +130,7 @@ void inference_activation_function(activations* A, act_func_t func);
 float loss_function(activations*A, loss_func_t func, int k);
 
 void forward_prop_step(activations*A1, DenseLayer*L,activations*A2);
+void forward_prop_inference(activations*A1, DenseLayer*L,activations*A2);
 
 // Calculates Gradient in activation given previous gradient.
 void calc_grad_activation(activations* A_curr,DenseLayer*L,activations* A_prev);

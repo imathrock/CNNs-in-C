@@ -100,13 +100,8 @@ int main(){
                 total_loss += loss_function(A4, CE, lbl_arr[k]) / BATCH_SIZE;
                 // Backward
                 back_propogate_step(A3, L3, A4);
-                calc_grad_activation(A3, L3, A4);
-    
                 back_propogate_step(A2, L2, A3);
-                calc_grad_activation(A2, L2, A3);
-    
                 back_propogate_step(A1, L1, A2);
-                calc_grad_activation(A1, L1, A2);
     
                 // Backprop kernels
                 for (int i = 0; i < NUM_KERNELS; i++) {
@@ -152,11 +147,11 @@ int main(){
     
                 // Forward
                 inference_activation_function(A1, ReLU);
-                forward_prop_step(A1, L1, A2);
+                forward_prop_inference(A1, L1, A2);
                 inference_activation_function(A2, ReLU);
-                forward_prop_step(A2, L2, A3);
+                forward_prop_inference(A2, L2, A3);
                 inference_activation_function(A3, ReLU);
-                forward_prop_step(A3, L3, A4);
+                forward_prop_inference(A3, L3, A4);
                 inference_activation_function(A4, Softmax);
     
             if(test_lbl_arr[k] == get_pred_from_softmax(A4)){correct_pred++;}
