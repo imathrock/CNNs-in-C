@@ -299,8 +299,11 @@ batchnorm_t* init_batchnorm(int num_features) {
     batchnorm_t* BN = (batchnorm_t*)malloc(sizeof(batchnorm_t));
     if (!BN) return NULL;
     BN->count = 0;
+    BN->momentum = 0.9;
     BN->mean    = (float*)calloc(num_features, sizeof(float));
     BN->var     = (float*)calloc(num_features, sizeof(float));
+    BN->run_mean= (float*)calloc(num_features, sizeof(float));
+    BN->run_var = (float*)calloc(num_features, sizeof(float));
     BN->gamma   = (float*)malloc(num_features* sizeof(float));
     BN->beta    = (float*)calloc(num_features, sizeof(float));
     BN->dgamma  = (float*)calloc(num_features, sizeof(float));
@@ -349,7 +352,7 @@ void free_layernorm(layernorm_t*LN) {
 // To improve this function, store squared values in var and subtract squared mean later in a shorter single loop
 /// @brief Batchnorm function
 /// @param A 
-void batchnorm(activations*A){
+void batchnorm_forward(activations*A){
     batchnorm_t*BN = A->norm_params.BN;
     float invbatch = 1.0f / A->batch_size;
     const float epsilon = 1e-5f;
@@ -363,12 +366,16 @@ void batchnorm(activations*A){
     }
     for(int i = 0; i < A->size; i++){
         float mean_val = BN->mean[i];
-        // printf("\nMean value: %f",BN->mean[i]);
         for (int j = 0; j < A->batch_size; j++){
             float diff = ACT_BN(A,j,i) - mean_val;
             BN->var[i] += diff * diff;
         }
         BN->var[i] *= invbatch;
+    }
+    // Update running statistics
+    for(int i = 0; i < A->size; i++) {
+        BN->run_mean[i] = BN->momentum * BN->run_mean[i] + (1.0f - BN->momentum) * BN->mean[i];
+        BN->run_var[i] = BN->momentum * BN->run_var[i] + (1.0f - BN->momentum) * BN->var[i];
     }
     __m256 epsilonvec = _mm256_set1_ps(epsilon);
     int i = 0;
@@ -390,11 +397,83 @@ void batchnorm(activations*A){
         for(int j = 0; j < A->batch_size; j++){
             ACT_BN_Z(A,j,i) = ((ACT_BN(A,j,i) - mean_val) / std_val) * gamma_val + beta_val;
         }
-        // printf("After Z:%f\n",ACT_BN_Z(A,0,i));
     }
-    // printf("\n\n\n\n\n\n\n\n\n\n\n\n");
 }
 
+/// @brief Batchnorm Inference function
+/// @param A 
+void BatchNorm_inference(activations*A){
+    batchnorm_t* BN = A->norm_params.BN;
+    float epsilon = 1e-5f;
+    for(int i = 0; i<A->size; i++){
+        float z = (A->raw[i] - BN->run_mean[i])/(sqrtf(BN->run_var[i])+epsilon);
+        A->Z[i] = BN->gamma[i]*z + BN->beta[i];
+    }
+}
+
+void BatchNorm_backward(activations*A){
+    batchnorm_t* BN = A->norm_params.BN;
+    float invbatch = 1.0f / A->batch_size;
+    const float epsilon = 1e-5f;
+    
+    // Zero out gamma and beta gradients
+    memset(BN->dgamma, 0, A->size * sizeof(float));
+    memset(BN->dbeta, 0, A->size * sizeof(float));
+    
+    // Compute gradients for gamma and beta
+    for(int i = 0; i < A->size; i++){
+        for(int j = 0; j < A->batch_size; j++){
+            // dgamma = dZ * normalized_input
+            float normalized_input = (ACT_BN(A, j, i) - BN->mean[i]) / (BN->var[i] + epsilon);
+            BN->dgamma[i] += ACT_BN(A, j, i) * normalized_input;
+            // dbeta = dZ (sum over batch)
+            BN->dbeta[i] += ACT_BN(A, j, i);
+        }
+    }
+    
+    // Compute gradient w.r.t. normalized inputs
+    for(int i = 0; i < A->size; i++){
+        float gamma_val = BN->gamma[i];
+        float std_val = BN->var[i] + epsilon;
+        
+        // Compute sum of gradients for this feature across batch
+        float sum_dZ = 0.0f;
+        float sum_dZ_normalized = 0.0f;
+        
+        for(int j = 0; j < A->batch_size; j++){
+            sum_dZ += ACT_BN(A, j, i);
+            float normalized_input = (ACT_BN(A, j, i) - BN->mean[i]) / std_val;
+            sum_dZ_normalized += ACT_BN(A, j, i) * normalized_input;
+        }
+        
+        // Backpropagate through normalization
+        for(int j = 0; j < A->batch_size; j++){
+            float normalized_input = (ACT_BN(A, j, i) - BN->mean[i]) / std_val;
+            
+            // Gradient w.r.t. unnormalized input
+            float dL_dx = (ACT_BN(A, j, i) * gamma_val - 
+                          sum_dZ * gamma_val * invbatch - 
+                          normalized_input * sum_dZ_normalized * gamma_val * invbatch) / std_val;
+            
+            A->dZ[j * A->size + i] = dL_dx;
+        }
+    }
+}
+
+/// @brief Updates batch normalization parameters (gamma and beta)
+/// @param A activation struct containing batch norm parameters
+/// @param learning_rate learning rate for parameter updates
+void update_batchnorm_params(activations* A, float learning_rate) {
+    if (A->norm_type != BatchNorm) return;
+    
+    batchnorm_t* BN = A->norm_params.BN;
+    
+    // Update gamma and beta using gradient descent
+    for(int i = 0; i < A->size; i++) {
+        BN->gamma[i] -= learning_rate * BN->dgamma[i];
+        BN->beta[i] -= learning_rate * BN->dbeta[i];
+    }
+}
 
 /// @brief Standardizes the activations
 /// @param A 
@@ -467,7 +546,7 @@ void activation_function(activations*A,act_func_t func){
     switch (A->norm_type)
     {
     case BatchNorm:
-        batchnorm(A);
+        batchnorm_forward(A);
         size *= A->batch_size;
         break;
     case LayerNorm:
@@ -643,6 +722,13 @@ void activation_function(activations*A,act_func_t func){
 /// @param A Activations struct
 /// @param func act func, default identity.
 void inference_activation_function(activations* A, act_func_t func) {
+    switch (A->norm_type){
+    case BatchNorm:
+        BatchNorm_inference(A);
+        break;
+    default:
+        break;
+    }
     switch (func) {
     case ReLU:
     {
@@ -1104,7 +1190,7 @@ void back_propogate_step(activations*A1,DenseLayer*L,activations* A2){
     }
         break;
     }
-    calc_grad_activation(A1,L,A2);
+    // calc_grad_activation(A1,L,A2);
 }
 
 /// @brief Gradient Accumulator

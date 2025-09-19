@@ -6,3 +6,4 @@ avxtest.c
 SIMD-TEST.c
 dataloaders\idx-file-parser.o
 Docs\cursor assist.md
+tasklist.md

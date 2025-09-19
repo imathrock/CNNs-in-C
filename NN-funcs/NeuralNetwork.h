@@ -60,6 +60,9 @@ typedef struct{
     int count;
     float*mean; // [features]
     float*var;// [features]
+    float*run_mean; // [features]
+    float*run_var;// [features]
+    float momentum;
     float*gamma;// [features]
     float*beta;// [features]
     float*dgamma;// [features]
@@ -118,7 +121,10 @@ layernorm_t*init_layernorm(int num_features);
 void free_layernorm(layernorm_t*LN);
 
 // Batch normalizer. 
-void batchnorm(activations*A);
+void batchnorm_forward(activations*A);
+void BatchNorm_backward(activations*A);
+void BatchNorm_inference(activations*A);
+void update_batchnorm_params(activations* A, float learning_rate);
 
 // test Layernorm
 void layernorm(activations *A);

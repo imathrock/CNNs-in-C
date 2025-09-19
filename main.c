@@ -36,8 +36,8 @@ int main(){
     
     //10 epochs 0.0005 lr 88.97%
     // Training parameters
-    int epoch = 100;
-    float learning_rate = 0.001;
+    int epoch = 1;
+    float learning_rate = 0.0001;
     int size = pixel_data->size/BATCH_SIZE; 
     
     // layer sizes
@@ -106,8 +106,16 @@ int main(){
             }
             // Backward
             back_propogate_step(A3, L3, A4);
+            BatchNorm_backward(A3);
+            calc_grad_activation(A3, L3, A4);
+
             back_propogate_step(A2, L2, A3);
+            BatchNorm_backward(A2);
+            calc_grad_activation(A2, L2, A3);
+
             back_propogate_step(A1, L1, A2);
+            BatchNorm_backward(A1);
+            calc_grad_activation(A1, L1, A2);
 
             A1->norm_params.BN->count = 0;
             // Backprop kernels
@@ -132,6 +140,12 @@ int main(){
             update_weights(L1, learning_rate);
             update_weights(L2, learning_rate);
             update_weights(L3, learning_rate);
+            
+            // Update batch normalization parameters
+            update_batchnorm_params(A1, learning_rate);
+            update_batchnorm_params(A2, learning_rate);
+            update_batchnorm_params(A3, learning_rate);
+            
             zero_grad(L1);
             zero_grad(L2);
             zero_grad(L3);
@@ -149,22 +163,22 @@ int main(){
         for (unsigned int k = 0; k < test_pix_data->size; k++){
             ImageInput(image, test_pix_data->neuron_activation[k]);
     
-                // Conv + Pool
-                for (int i = 0; i < NUM_KERNELS; i++) {
-                    Conv2D(kernels[i], image, convimg[i]);
-                    MAXPOOL(Poolimg[i], convimg[i], 2, 2);
-                    int imgsize = Poolimg[i].rows * Poolimg[i].cols;
-                    memcpy(A1->Z + i * imgsize, Poolimg[i].Data, imgsize * sizeof(float));
-                }
-    
-                // Forward
-                inference_activation_function(A1, ReLU);
-                forward_prop_inference(A1, L1, A2);
-                inference_activation_function(A2, ReLU);
-                forward_prop_inference(A2, L2, A3);
-                inference_activation_function(A3, ReLU);
-                forward_prop_inference(A3, L3, A4);
-                inference_activation_function(A4, Softmax);
+            // Conv + Pool
+            for (int i = 0; i < NUM_KERNELS; i++) {
+                Conv2D(kernels[i], image, convimg[i]);
+                MAXPOOL(Poolimg[i], convimg[i], 2, 2);
+                int imgsize = Poolimg[i].rows * Poolimg[i].cols;
+                memcpy(A1->raw + i * imgsize, Poolimg[i].Data, imgsize * sizeof(float));
+            }
+
+            // Forward
+            inference_activation_function(A1, ReLU);
+            forward_prop_inference(A1, L1, A2);
+            inference_activation_function(A2, ReLU);
+            forward_prop_inference(A2, L2, A3);
+            inference_activation_function(A3, ReLU);
+            forward_prop_inference(A3, L3, A4);
+            inference_activation_function(A4, Softmax);
     
             if(test_lbl_arr[k] == get_pred_from_softmax(A4)){correct_pred++;}
             if (k%1000 == 0){printf(".");}
