@@ -12,6 +12,8 @@
 #define L_WEIGHT_T(L, i, j, rows)  (L->Weights_T[((i) * rows) + (j)])
 #define ACT_BN(A,i,j) (A->raw[(i)*(A->size)+(j)])
 #define ACT_BN_Z(A,i,j) (A->Z[(i)*(A->size)+(j)])
+#define ACT_BN_dZ(A,i,j) (A->dZ[(i)*(A->size)+(j)])
+
 
 /// @brief Box Muller transform, computes random number on mean=0 and var=1 spectrum. Generates 2 numbers, returns spare on second call.
 /// @return random number
@@ -413,51 +415,46 @@ void BatchNorm_inference(activations*A){
 
 void BatchNorm_backward(activations*A){
     batchnorm_t* BN = A->norm_params.BN;
-    float invbatch = 1.0f / A->batch_size;
-    const float epsilon = 1e-5f;
-    
-    // Zero out gamma and beta gradients
+    int N = A->batch_size;
+    int F = A->size;
+    float* xhat = (float*)malloc(N * F * sizeof(float));
+    for (int i = 0; i < F; i++) {
+        float mean_val = BN->mean[i];
+        float std_val  = BN->var[i];
+        for (int j = 0; j < N; j++) {
+            float x = ACT_BN(A,j,i);
+            xhat[j*F + i] = (x - mean_val) / std_val;
+        }
+    }
     memset(BN->dgamma, 0, A->size * sizeof(float));
     memset(BN->dbeta, 0, A->size * sizeof(float));
-    
-    // Compute gradients for gamma and beta
-    for(int i = 0; i < A->size; i++){
-        for(int j = 0; j < A->batch_size; j++){
-            // dgamma = dZ * normalized_input
-            float normalized_input = (ACT_BN(A, j, i) - BN->mean[i]) / (BN->var[i] + epsilon);
-            BN->dgamma[i] += ACT_BN(A, j, i) * normalized_input;
-            // dbeta = dZ (sum over batch)
-            BN->dbeta[i] += ACT_BN(A, j, i);
+    for(int i = 0; i<F; i++){
+        float dgamma = 0.0f; float dbeta = 0.0f;
+        for (int j = 0; j < N; j++){
+            float dy = ACT_BN_dZ(A,j,i);
+            dgamma+= dy*xhat[j*F + i];
+            dbeta+= dy;
         }
+        BN->dgamma[i] = dgamma;
+        BN->dbeta[i] = dbeta;
     }
-    
-    // Compute gradient w.r.t. normalized inputs
-    for(int i = 0; i < A->size; i++){
-        float gamma_val = BN->gamma[i];
-        float std_val = BN->var[i] + epsilon;
-        
-        // Compute sum of gradients for this feature across batch
-        float sum_dZ = 0.0f;
-        float sum_dZ_normalized = 0.0f;
-        
-        for(int j = 0; j < A->batch_size; j++){
-            sum_dZ += ACT_BN(A, j, i);
-            float normalized_input = (ACT_BN(A, j, i) - BN->mean[i]) / std_val;
-            sum_dZ_normalized += ACT_BN(A, j, i) * normalized_input;
+    for (int i = 0; i < F; i++){
+        float inv_std = 1.0f / BN->var[i]; 
+        float sum_dxh = 0.0f, sum_dxh_xhat = 0.0f;
+        for (int j = 0; j < N; j++) {
+            float dy = ACT_BN_dZ(A,j,i);
+            float d_hat_x = dy * BN->gamma[i];
+            sum_dxh += d_hat_x;
+            sum_dxh_xhat += d_hat_x * xhat[j*F + i];
         }
-        
-        // Backpropagate through normalization
-        for(int j = 0; j < A->batch_size; j++){
-            float normalized_input = (ACT_BN(A, j, i) - BN->mean[i]) / std_val;
-            
-            // Gradient w.r.t. unnormalized input
-            float dL_dx = (ACT_BN(A, j, i) * gamma_val - 
-                          sum_dZ * gamma_val * invbatch - 
-                          normalized_input * sum_dZ_normalized * gamma_val * invbatch) / std_val;
-            
-            A->dZ[j * A->size + i] = dL_dx;
-        }
+        for (int j = 0; j < N; j++) {
+            float dy = ACT_BN_dZ(A,j,i);
+            float d_hat_x = dy * BN->gamma[i];
+            float term = (N * d_hat_x) - sum_dxh - xhat[j*F + i] * sum_dxh_xhat;
+            ACT_BN_dZ(A,j,i) = (inv_std / N) * term;
+        }        
     }
+    free(xhat);
 }
 
 /// @brief Updates batch normalization parameters (gamma and beta)
@@ -465,9 +462,7 @@ void BatchNorm_backward(activations*A){
 /// @param learning_rate learning rate for parameter updates
 void update_batchnorm_params(activations* A, float learning_rate) {
     if (A->norm_type != BatchNorm) return;
-    
     batchnorm_t* BN = A->norm_params.BN;
-    
     // Update gamma and beta using gradient descent
     for(int i = 0; i < A->size; i++) {
         BN->gamma[i] -= learning_rate * BN->dgamma[i];
@@ -546,7 +541,7 @@ void activation_function(activations*A,act_func_t func){
     switch (A->norm_type)
     {
     case BatchNorm:
-        batchnorm_forward(A);
+        if(func != Softmax){batchnorm_forward(A);}
         size *= A->batch_size;
         break;
     case LayerNorm:
@@ -870,6 +865,9 @@ void inference_activation_function(activations* A, act_func_t func) {
 /// @param k 
 /// @return 
 float loss_function(activations*A, loss_func_t func, int k){
+    if(A->norm_type == BatchNorm){
+        
+    }
     float loss = 0.0f;
     switch (func){
     case L1loss:{
@@ -1190,7 +1188,7 @@ void back_propogate_step(activations*A1,DenseLayer*L,activations* A2){
     }
         break;
     }
-    // calc_grad_activation(A1,L,A2);
+    calc_grad_activation(A1,L,A2);
 }
 
 /// @brief Gradient Accumulator

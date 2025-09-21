@@ -107,15 +107,12 @@ int main(){
             // Backward
             back_propogate_step(A3, L3, A4);
             BatchNorm_backward(A3);
-            calc_grad_activation(A3, L3, A4);
 
             back_propogate_step(A2, L2, A3);
             BatchNorm_backward(A2);
-            calc_grad_activation(A2, L2, A3);
 
             back_propogate_step(A1, L1, A2);
             BatchNorm_backward(A1);
-            calc_grad_activation(A1, L1, A2);
 
             A1->norm_params.BN->count = 0;
             // Backprop kernels
@@ -145,6 +142,7 @@ int main(){
             update_batchnorm_params(A1, learning_rate);
             update_batchnorm_params(A2, learning_rate);
             update_batchnorm_params(A3, learning_rate);
+            update_batchnorm_params(A4, learning_rate);
             
             zero_grad(L1);
             zero_grad(L2);
