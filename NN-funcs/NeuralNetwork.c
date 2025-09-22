@@ -13,6 +13,8 @@
 #define ACT_BN(A,i,j) (A->raw[(i)*(A->size)+(j)])
 #define ACT_BN_Z(A,i,j) (A->Z[(i)*(A->size)+(j)])
 #define ACT_BN_dZ(A,i,j) (A->dZ[(i)*(A->size)+(j)])
+#define ACT_BN_gp(A,i,j) (A->gprime[(i)*(A->size)+(j)])
+
 
 
 /// @brief Box Muller transform, computes random number on mean=0 and var=1 spectrum. Generates 2 numbers, returns spare on second call.
@@ -864,118 +866,130 @@ void inference_activation_function(activations* A, act_func_t func) {
 /// @param func loss function
 /// @param k 
 /// @return 
-float loss_function(activations*A, loss_func_t func, int k){
-    if(A->norm_type == BatchNorm){
-        
-    }
+float unit_loss_function(activations* A, loss_func_t func, int batch_idx, int label_idx) {
     float loss = 0.0f;
-    switch (func){
-    case L1loss:{
-        for(int i = 0; i < A->size; i++){
-            if(i == k) A->gprime[i] = A->Z[i] - 1.0f;
-            else A->gprime[i] = A->Z[i];
-            A->dZ[i] = A->gprime[i]; // Set dZ for backprop
-        }
-        loss = fabsf(A->gprime[k]);
-        }
-        break;
+    int size = A->size;
+    int offset = batch_idx * size;
 
-    case L2loss:{
-        for(int i = 0; i < A->size; i++){
-            if(i == k) A->gprime[i] = A->Z[i] - 1.0f;
-            else A->gprime[i] = A->Z[i];
-            A->dZ[i] = A->gprime[i]; // Set dZ for backprop
-            loss += A->gprime[i] * A->gprime[i];
+    switch (func) {
+    case L1loss: {
+        for (int j = 0; j < size; j++) {
+            if (j == label_idx) A->gprime[offset + j] = A->Z[offset + j] - 1.0f;
+            else                A->gprime[offset + j] = A->Z[offset + j];
+            A->dZ[offset + j] = A->gprime[offset + j];
         }
-        loss *= 0.5f; // standard L2 scaling
-        }
+        loss = fabsf(A->gprime[offset + label_idx]);
         break;
+    }
 
-    case CE:{ // assumes Z already softmaxed
-        for(int i = 0; i < A->size; i++){
-            A->gprime[i] = A->Z[i];
-            A->dZ[i] = A->gprime[i]; // For softmax+CE, dZ = y_hat - y
+    case L2loss: {
+        for (int j = 0; j < size; j++) {
+            if (j == label_idx) A->gprime[offset + j] = A->Z[offset + j] - 1.0f;
+            else                A->gprime[offset + j] = A->Z[offset + j];
+            A->dZ[offset + j] = A->gprime[offset + j];
+            loss += A->gprime[offset + j] * A->gprime[offset + j];
         }
-        loss = -logf(A->Z[k] + 1e-9f);
-        A->gprime[k] -= 1.0f;
-        A->dZ[k] -= 1.0f;
-        }
+        loss *= 0.5f;
         break;
+    }
 
-    case MSE:{
-        for(int i = 0; i < A->size; i++){
-            float y = (i == k) ? 1.0f : 0.0f;
-            A->gprime[i] = A->Z[i] - y;
-            A->dZ[i] = A->gprime[i];
-            loss += A->gprime[i] * A->gprime[i];
+    case CE: { // assumes softmax already applied
+        for (int j = 0; j < size; j++) {
+            A->gprime[offset + j] = A->Z[offset + j];
+            A->dZ[offset + j]     = A->gprime[offset + j];
         }
-        loss /= A->size;
-        }
+        loss = -logf(A->Z[offset + label_idx] + 1e-9f);
+        A->gprime[offset + label_idx] -= 1.0f;
+        A->dZ[offset + label_idx]     -= 1.0f;
         break;
+    }
 
-    case MAE:{
-        for(int i = 0; i < A->size; i++){
-            float y = (i == k) ? 1.0f : 0.0f;
-            A->gprime[i] = A->Z[i] - y;
-            A->dZ[i] = A->gprime[i];
-            loss += fabsf(A->gprime[i]);
+    case MSE: {
+        for (int j = 0; j < size; j++) {
+            float y = (j == label_idx) ? 1.0f : 0.0f;
+            A->gprime[offset + j] = A->Z[offset + j] - y;
+            A->dZ[offset + j]     = A->gprime[offset + j];
+            loss += A->gprime[offset + j] * A->gprime[offset + j];
         }
-        loss /= A->size;
-        }
+        loss /= size;
         break;
+    }
 
-    case HUBER:{
+    case MAE: {
+        for (int j = 0; j < size; j++) {
+            float y = (j == label_idx) ? 1.0f : 0.0f;
+            A->gprime[offset + j] = A->Z[offset + j] - y;
+            A->dZ[offset + j]     = A->gprime[offset + j];
+            loss += fabsf(A->gprime[offset + j]);
+        }
+        loss /= size;
+        break;
+    }
+
+    case HUBER: {
         float delta = 1.0f;
-        for(int i = 0; i < A->size; i++){
-            float y = (i == k) ? 1.0f : 0.0f;
-            A->gprime[i] = A->Z[i] - y;
-            A->dZ[i] = A->gprime[i];
-            float abs_error = fabsf(A->gprime[i]);
-            if(abs_error < delta){
+        for (int j = 0; j < size; j++) {
+            float y = (j == label_idx) ? 1.0f : 0.0f;
+            A->gprime[offset + j] = A->Z[offset + j] - y;
+            A->dZ[offset + j]     = A->gprime[offset + j];
+            float abs_error = fabsf(A->gprime[offset + j]);
+            if (abs_error < delta) {
                 loss += 0.5f * abs_error * abs_error;
             } else {
                 loss += delta * (abs_error - 0.5f * delta);
             }
         }
-        loss /= A->size;
-        }
+        loss /= size;
         break;
+    }
 
-    case BCE:{ // binary classification only, assumes A->size == 1
-        float y = (k == 1) ? 1.0f : 0.0f;
-        float z = A->Z[0];
-        A->gprime[0] = z - y;
-        A->dZ[0] = A->gprime[0];
+    case BCE: { // binary only, assumes size==1
+        float y = (label_idx == 1) ? 1.0f : 0.0f;
+        float z = A->Z[offset + 0];
+        A->gprime[offset + 0] = z - y;
+        A->dZ[offset + 0]     = A->gprime[offset + 0];
         loss = -(y * logf(z + 1e-9f) + (1.0f - y) * logf(1.0f - z + 1e-9f));
-        }
         break;
+    }
 
-    case CCE:{ // multi-class categorical CE (one-hot target)
-        for(int i = 0; i < A->size; i++){
-            A->gprime[i] = A->Z[i];
-            A->dZ[i] = A->gprime[i];
+    case CCE: { // categorical CE with one-hot target
+        for (int j = 0; j < size; j++) {
+            A->gprime[offset + j] = A->Z[offset + j];
+            A->dZ[offset + j]     = A->gprime[offset + j];
         }
-        loss = -logf(A->Z[k] + 1e-9f);
-        A->gprime[k] -= 1.0f;
-        A->dZ[k] -= 1.0f;
-        }
+        loss = -logf(A->Z[offset + label_idx] + 1e-9f);
+        A->gprime[offset + label_idx] -= 1.0f;
+        A->dZ[offset + label_idx]     -= 1.0f;
         break;
+    }
 
-    case SCE:{ // sparse categorical CE, same as CE for int labels
-        for(int i = 0; i < A->size; i++){
-            A->gprime[i] = A->Z[i];
-            A->dZ[i] = A->gprime[i];
+    case SCE: { // sparse categorical CE, same math as CE
+        for (int j = 0; j < size; j++) {
+            A->gprime[offset + j] = A->Z[offset + j];
+            A->dZ[offset + j]     = A->gprime[offset + j];
         }
-        loss = -logf(A->Z[k] + 1e-9f);
-        A->gprime[k] -= 1.0f;
-        A->dZ[k] -= 1.0f;
-        }
+        loss = -logf(A->Z[offset + label_idx] + 1e-9f);
+        A->gprime[offset + label_idx] -= 1.0f;
+        A->dZ[offset + label_idx]     -= 1.0f;
         break;
+    }
 
     default:
         break;
     }
+
     return loss;
+}
+
+
+float loss_function(activations*A, loss_func_t loss ,int k,unsigned char*l){
+    float total_loss = 0.0f;
+    if(A->norm_type == BatchNorm){
+        for(int i = 0; i < A->batch_size; i++){
+            total_loss+= unit_loss_function(A,loss,i,(int)l[i]);
+        }
+    }else{return unit_loss_function(A,loss,0,k);}
+    return total_loss/A->batch_size;
 }
 
 /// @brief Efficient Forward prop function with AVX2 intrinsics.

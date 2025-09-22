@@ -2,14 +2,16 @@
 
 A high-performance implementation of Convolutional Neural Networks (CNNs) written entirely in C, featuring SIMD optimizations and support for MNIST and Fashion MNIST datasets.
 
-Note: Almost all of the code was written with minimal help from LLMs. Only help was in writing meanial functions such as completing switch case statements, segfault debugging before I knew what gdb was and some legitimately miniscule errors like reversed arguments to avx fmadd function that was cocking up my training process that even claude could not find and gpt5 in cursor took 15 minutes of deep thinking to find so you can't blame me there. And the documentation in the docs folder was written by AI.
+There are 3 notes mentioned at the end I would suggest please read them.
+
+To run other datasets like CIFAR 10 you will have to modify the code for it to support that kind of idx file.
 
 ##  Features
 
 ### Core Neural Network
-- **Convolutional Neural Networks**: Full 2D convolution and pooling operations. Current performance bottleneck.
-- **Dense Layers**: Fully connected layers with multiple activation functions. Think there are some small optimizations here.
-- **Backpropagation**: Complete Stochastic gradient descent training. Will add Adam later.
+- **Convolutional Neural Networks**: Full 2D convolution and pooling operations. C
+- **Dense Layers**: Fully connected layers with multiple activation functions.
+- **Backpropagation**: Complete Stochastic gradient descent training. No Adam support, maybe in a newer project.
 - **Multiple Datasets**: Support for MNIST and Fashion MNIST rn but you can train using anything as long as you can load pixel values into the first convolution layer.
 
 ### Performance Optimizations
@@ -29,10 +31,10 @@ Note: Almost all of the code was written with minimal help from LLMs. Only help 
 
 | Dataset | Accuracy | Training Time |
 |---------|----------|---------------|
-| MNIST | ~96% | ~6 minutes |
-| Fashion MNIST | ~90% | ~6 minutes |
+| MNIST | ~96% | ~1-2 minutes |
+| Fashion MNIST | ~90% | ~2-3 minutes |
 
-MNIST was trained on 10 epochs, ~50s per epoch
+MNIST was trained on 10 epochs, ~7s per epoch
 *Performance may vary based on hardware specifications*
 
 ##  Requirements
@@ -130,7 +132,7 @@ AI generated Comprehensive documentation for all functions is available in the `
 - Should not happen. But submit a pull request or email me or something
 
 **Poor accuracy**
-- There is no batchnorm yet
+- The batchnorm is kinda broken and I am not willing to waste time fixing it.
 - Try adjusting learning rate or number of epochs
 - Check if dataset files are properly downloaded
 
@@ -145,7 +147,14 @@ This this was ridicoulously memory hungry because of a memory leak but i fixed i
 Just hit me up and we can talk about you contributing to this.
 
 ### Areas for Improvement
-- Fucking batchnorm, i know im a bit lazy.
-- More optimization techniques, imma vectorize TF outta this.
+- Proper batchnorm implementation, doing this in C is just a pain so i have given up for now.
+- More optimization techniques, like Adam.
 - Better error handling and validation
-- GPU acceleration support, OpenCL
+- GPU acceleration support, OpenCL.
+
+
+**Note: Almost all of the code was written with minimal help from LLMs. Only help was in writing meanial functions such as completing switch case statements, segfault debugging before I knew what gdb was and some legitimately miniscule errors like reversed arguments to avx fmadd function that was cocking up my training process that even claude could not find and gpt5 in cursor took 15 minutes of deep thinking to find so you can't blame me there. And the documentation in the docs folder was written by AI.
+
+Note 2: This is not my best C code because I was a total noob when i began this originally in MNIST from Scratch in C. But this taught me loads about Deep learning and C programming.
+
+Note 3: About BatchNormalization. I think I went wrong somewhere in the implementation of BN, the network training and inference works, it just does not learn and I did not want to waste any more time debugging why it does not work. It is really fucking difficult to debug and I even tried AI to find the exact bug but it aint learning. So expect no more development on this matter. I have better avenues and newer better projects to do that will actually advance my understanding and working ability of ML,DL and tiny ML.**

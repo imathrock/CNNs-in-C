@@ -122,8 +122,11 @@ void free_layernorm(layernorm_t*LN);
 
 // Batch normalizer. 
 void batchnorm_forward(activations*A);
+
 void BatchNorm_backward(activations*A);
+
 void BatchNorm_inference(activations*A);
+
 void update_batchnorm_params(activations* A, float learning_rate);
 
 // test Layernorm
@@ -131,11 +134,13 @@ void layernorm(activations *A);
 
 // Efficient Forward prop function.
 void activation_function(activations*A,act_func_t func);
+
 void inference_activation_function(activations* A, act_func_t func);
 
-float loss_function(activations*A, loss_func_t func, int k);
+float loss_function(activations*A, loss_func_t loss ,int k,unsigned char*l);
 
 void forward_prop_step(activations*A1, DenseLayer*L,activations*A2);
+
 void forward_prop_inference(activations*A1, DenseLayer*L,activations*A2);
 
 // Calculates Gradient in activation given previous gradient.

@@ -36,8 +36,8 @@ int main(){
     
     //10 epochs 0.0005 lr 88.97%
     // Training parameters
-    int epoch = 1;
-    float learning_rate = 0.0001;
+    int epoch = 2;
+    float learning_rate = 0.001;
     int size = pixel_data->size/BATCH_SIZE; 
     
     // layer sizes
@@ -101,9 +101,8 @@ int main(){
             activation_function(A4, Softmax);
 
             // Loss
-            for (int k = BATCH_SIZE * j; k < BATCH_SIZE * (j + 1); k++) {
-                total_loss += loss_function(A4, CE, lbl_arr[k]) / BATCH_SIZE;
-            }
+            total_loss = loss_function(A4, CE, 0, &lbl_arr[BATCH_SIZE * j]);
+            // printf("total loss : %f\n",total_loss);
             // Backward
             back_propogate_step(A3, L3, A4);
             BatchNorm_backward(A3);

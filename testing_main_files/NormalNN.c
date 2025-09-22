@@ -97,7 +97,7 @@ int main(){
                 activation_function(A4, Softmax);
     
                 // Loss
-                total_loss += loss_function(A4, CE, lbl_arr[k]) / BATCH_SIZE;
+                total_loss += loss_function(A4, L2loss, 0, &lbl_arr[k]) / BATCH_SIZE;
                 // Backward
                 back_propogate_step(A3, L3, A4);
                 back_propogate_step(A2, L2, A3);
